@@ -1,0 +1,95 @@
+# Seconds a player stays combat tagged after valid player damage.
+combat:
+  duration-seconds: 15
+  # If true, players who disconnect while combat tagged are killed.
+  kill-on-logout: true
+  # If true, tagged players cannot wear elytra. Elytras are moved to main inventory, or /elytravault if only hotbar/no slots are free.
+  disable-elytra-while-tagged: false
+  # If true, player-caused explosions such as end crystals, respawn anchors, beds, and TNT tag victims.
+  tag-player-explosions: true
+  # Optional ender pearl cooldown. Modes: always, when-tagged, never.
+  pearl-cooldown:
+    mode: never
+    seconds: 5
+  # Empty list means every world is enabled. Example: [world, world_nether]
+  enabled-worlds: []
+  # Worlds where combat tag never starts. Example: [spawn]
+  disabled-worlds: []
+  # WorldGuard region IDs where combat tag never starts. Requires WorldGuard. Example: [spawn, safezone]
+  disabled-worldguard-regions: []
+
+actionbar:
+  enabled: true
+
+combat-logout:
+  # Broadcasts when a tagged player logs out.
+  broadcast-enabled: true
+  broadcast-message: "{bad}{player} logged out while combat tagged."
+  # Console commands run when a tagged player logs out. Supports %player%.
+  console-commands: []
+
+native-dialogs:
+  # Uses Minecraft's native dialog/input screens for search and text/number input when supported.
+  # Requires a compatible Paper or Paper-fork server with the Dialog API.
+  # Spigot and older versions automatically fall back to inventory/chat GUI mode.
+  # Set this to false to always use inventory/chat GUI mode.
+  enabled: true
+  # Sends admins a short warning when native dialogs are enabled but unavailable and the plugin falls back.
+  warn-on-fallback: true
+
+commands:
+  # If true, combat tagged players can only use commands listed below.
+  block-while-tagged: true
+  # Allowed command patterns while tagged. Do not include the slash.
+  # "team chat" allows /team chat <message> but not /team invite.
+  # "team *" allows all /team subcommands.
+  allowed-while-tagged:
+    - foteams chat
+    - team chat
+    - teams chat
+    - tc
+    - msg
+    - tell
+    - w
+    - r
+    - reply
+    - message
+    - elytravault
+    - focombattagadmin *
+
+# WorldGuard integration is optional. FoCombatTag still works when WorldGuard is missing.
+worldguard:
+  # Checks WorldGuard's PVP flag so tagged players cannot enter regions where PVP is denied.
+  check-no-pvp-regions: true
+  # WorldGuard region IDs that tagged players cannot leave. Empty list disables enclosure checks.
+  enclosed-regions: []
+  border:
+    # Shows the no-PVP edge near tagged players.
+    enabled: true
+    # Enables the thin translucent shield layer and ender pearl impact flash.
+    # If false, the border uses only the block selected in the main editor.
+    advanced-visuals-enabled: true
+    # Client-side block sent for the border. BARRIER is invisible but solid client-side.
+    collision-material: BARRIER
+    # Thin strip color. Supports #RRGGBB and simple names like red, blue, green, yellow, purple.
+    visual-color: "#ff3d5a"
+    # How far ahead/around the player the translucent strip is shown. It fades with distance.
+    visual-range: 4
+    # Horizontal block scan radius around tagged players. Keep small for performance.
+    radius: 3
+    # Blocks above/below player feet to scan for border collision.
+    height: 2
+    # Only draws fake border over air blocks, so real terrain is not visually replaced.
+    only-air: true
+    # Caches WorldGuard border scans for performance. Higher values can make borders update slower after region/block changes.
+    cache-seconds: 30
+    # Multiplies the one-time border velocity push. 1.0 is the default shove, 0 disables it.
+    pushback-multiplier: 1.0
+    pearl-impact:
+      # Radius of the diamond-shaped shield flash when an ender pearl hits the border.
+      radius: 2
+      # How long the shield flash stays visible.
+      duration-ticks: 18
+
+# File logging works like debug mode and saves plugin activity to logs/latest.log. Default: false
+file-logging: false

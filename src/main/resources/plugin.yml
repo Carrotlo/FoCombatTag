@@ -1,0 +1,24 @@
+name: FoCombatTag
+description: Combat tag plugin with WorldGuard no-PvP region protection
+version: '${version}'
+
+main: me.foesio.foCombatTag.FoCombatTag
+api-version: '1.21'
+
+authors: [ Carrotio ]
+softdepend: [ WorldGuard, FoTeams, Skript, PlaceholderAPI ]
+
+commands:
+  focombattagadmin:
+    description: FoCombatTag admin command
+    aliases: [ combattagadmin ]
+    permission: focombattag.admin
+    usage: /<command> [version|reload|editor|tag|untag|status]
+  elytravault:
+    description: Claim elytras stored while combat tagged
+    usage: /<command>
+
+permissions:
+  focombattag.admin:
+    description: Access to FoCombatTag admin tools
+    default: op

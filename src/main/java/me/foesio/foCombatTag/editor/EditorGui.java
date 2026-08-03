@@ -1,0 +1,1098 @@
+package me.foesio.foCombatTag.editor;
+
+import me.foesio.core.dialog.DialogButton;
+import me.foesio.core.dialog.NativeDialogAvailability;
+import me.foesio.core.dialog.TextDialogRequest;
+import me.foesio.core.editor.EditorDialogInputs;
+import me.foesio.core.editor.EditorItemFactory;
+import me.foesio.core.gui.GuiButtonConfig;
+import me.foesio.core.gui.GuiSlots;
+import me.foesio.core.gui.GuiTitles;
+import me.foesio.core.material.MaterialChooserActionType;
+import me.foesio.core.material.MaterialChooserClick;
+import me.foesio.core.material.MaterialChooserHolder;
+import me.foesio.core.material.MaterialChooserMenus;
+import me.foesio.core.material.MaterialChooserMode;
+import me.foesio.core.material.MaterialChooserRequest;
+import me.foesio.core.material.MaterialTypes;
+import me.foesio.core.message.FoStyle;
+import me.foesio.core.number.NumberFormatters;
+import me.foesio.core.selector.StringSelectionEntries;
+import me.foesio.core.selector.TriStateSelectionActionType;
+import me.foesio.core.selector.TriStateSelectionClick;
+import me.foesio.core.selector.TriStateSelectionEntry;
+import me.foesio.core.selector.TriStateSelectionHolder;
+import me.foesio.core.selector.TriStateSelectionMenus;
+import me.foesio.core.selector.TriStateSelectionRequest;
+import me.foesio.core.selector.TriStateSelectionState;
+import me.foesio.foCombatTag.FoCombatTag;
+import me.foesio.foCombatTag.config.Settings.PearlCooldownMode;
+import org.bukkit.Bukkit;
+import org.bukkit.Material;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.ClickType;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryHolder;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
+public final class EditorGui implements Listener {
+    private static final int SIZE = 36;
+    private static final int ROWS = SIZE / GuiSlots.ROW_SIZE;
+    private static final int BOTTOM_ROW_START = GuiSlots.bottomRowStart(ROWS);
+    private static final int BACK_SLOT = GuiSlots.bottomMiddleSlot(ROWS);
+    private static final int PREVIOUS_PAGE_SLOT = BOTTOM_ROW_START;
+    private static final int NEXT_PAGE_SLOT = BOTTOM_ROW_START + GuiSlots.ROW_SIZE - 1;
+    private static final int[] COMMAND_SLOTS = {10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 24, 25};
+
+    private final FoCombatTag plugin;
+    private final GuiButtonConfig buttons = GuiButtonConfig.defaults();
+    private final Set<UUID> warnedNativeFallback = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, View> materialChooserReturnViews = new ConcurrentHashMap<>();
+
+    public EditorGui(FoCombatTag plugin) {
+        this.plugin = plugin;
+    }
+
+    public void open(Player player) {
+        openMain(player);
+    }
+
+    private void openMain(Player player) {
+        EditorHolder holder = new EditorHolder(View.MAIN, 0);
+        Inventory inventory = Bukkit.createInventory(holder, SIZE, GuiTitles.format("Combat Tag Editor"));
+        holder.setInventory(inventory);
+        fill(inventory);
+
+        inventory.setItem(10, item(Material.CLOCK, "{theme}Combat Timer", List.of(
+                "{white}Current: {theme}" + plugin.settings().combatDurationSeconds() + "s",
+                "{white}Click to edit."
+        )));
+        inventory.setItem(11, item(Material.HOPPER, "{theme}Border Cache", List.of(
+                "{white}Current: {theme}" + plugin.settings().worldGuardBorderCacheSeconds() + "s",
+                "{white}Click to edit."
+        )));
+        inventory.setItem(12, toggleItem(Material.RED_STAINED_GLASS, "Show WG Border", plugin.settings().worldGuardBorderEnabled()));
+        inventory.setItem(13, item(plugin.settings().worldGuardBorderCollisionMaterial(), "{theme}Border Block", List.of(
+                "{white}Current: {theme}" + plugin.settings().worldGuardBorderCollisionMaterial().name(),
+                "{white}Click to choose block.",
+                "{white}Used directly when advanced visuals are off."
+        )));
+        inventory.setItem(14, toggleItem(Material.COMMAND_BLOCK, "Block Commands", plugin.settings().blockCommandsWhileTagged()));
+        inventory.setItem(15, item(Material.WRITABLE_BOOK, "{theme}Allowed Commands", List.of(
+                "{white}Entries: {theme}" + configuredAllowedCommands().size(),
+                "{white}Click to browse."
+        )));
+        inventory.setItem(16, item(Material.TINTED_GLASS, "{theme}Border Visuals", List.of(
+                "{white}Advanced: " + (plugin.settings().worldGuardBorderAdvancedVisualsEnabled() ? "{good}Enabled" : "{bad}Disabled"),
+                "{white}Click to edit all border visual options."
+        )));
+        inventory.setItem(19, item(Material.PISTON, "{theme}Pushback Multiplier", List.of(
+                "{white}Current: {theme}" + NumberFormatters.money(plugin.settings().worldGuardBorderPushbackMultiplier()) + "x",
+                "{white}Click to edit."
+        )));
+        inventory.setItem(20, toggleItem(Material.SKELETON_SKULL, "Kill On Logout", plugin.settings().killOnLogout()));
+        inventory.setItem(21, item(Material.ENDER_EYE, "{theme}Enclosed Regions", List.of(
+                "{white}Selected: {theme}" + plugin.settings().enclosedWorldGuardRegions().size(),
+                "{white}State: " + (plugin.settings().hasEnclosedWorldGuardRegions() ? "{good}Enabled" : "{bad}Disabled"),
+                "{white}Click to select WorldGuard regions."
+        )));
+        inventory.setItem(22, toggleItem(Material.ELYTRA, "Disable Elytra", plugin.settings().disableElytraWhileTagged()));
+        inventory.setItem(23, pearlCooldownModeItem());
+        inventory.setItem(24, item(Material.CLOCK, "{theme}Pearl Cooldown Timer", List.of(
+                "{white}Current: {theme}" + plugin.settings().pearlCooldownSeconds() + "s",
+                "{white}Click to edit."
+        )));
+        inventory.setItem(25, toggleItem(Material.END_CRYSTAL, "Player Explosions", plugin.settings().tagPlayerExplosions()));
+        player.openInventory(inventory);
+    }
+
+    private void openEnclosedRegions(Player player, int page) {
+        openEnclosedRegions(player, page, "");
+    }
+
+    private void openEnclosedRegions(Player player, int page, String filter) {
+        TriStateSelectionMenus.open(player, enclosedRegionsRequest(page, filter));
+    }
+
+    private void openCommands(Player player, int page) {
+        List<String> commands = configuredAllowedCommands();
+        int maxPage = Math.max(0, (commands.size() - 1) / COMMAND_SLOTS.length);
+        page = Math.max(0, Math.min(maxPage, page));
+        EditorHolder holder = new EditorHolder(View.COMMANDS, page);
+        Inventory inventory = Bukkit.createInventory(holder, SIZE, GuiTitles.format("Allowed Commands"));
+        holder.setInventory(inventory);
+        fill(inventory);
+
+        int start = page * COMMAND_SLOTS.length;
+        for (int index = 0; index < COMMAND_SLOTS.length; index++) {
+            int commandIndex = start + index;
+            if (commandIndex >= commands.size()) {
+                break;
+            }
+            String command = commands.get(commandIndex);
+            inventory.setItem(COMMAND_SLOTS[index], item(Material.PAPER, "{theme}" + command, List.of(
+                    "{white}Shift right-click to remove.",
+                    "{white}Allowed while tagged."
+            )));
+        }
+
+        inventory.setItem(BACK_SLOT, buttons.back());
+        inventory.setItem(29, item(Material.LIME_DYE, "{good}Add Command", List.of(
+                "{white}Click to add a pattern.",
+                "{white}Examples: {theme}team chat{white}, {theme}team *"
+        )));
+        if (page > 0) {
+            inventory.setItem(PREVIOUS_PAGE_SLOT, buttons.previousPage(page, maxPage));
+        }
+        if (page < maxPage) {
+            inventory.setItem(NEXT_PAGE_SLOT, buttons.nextPage(page, maxPage));
+        }
+        player.openInventory(inventory);
+    }
+
+    private void openBorderVisuals(Player player) {
+        EditorHolder holder = new EditorHolder(View.BORDER_VISUALS, 0);
+        Inventory inventory = Bukkit.createInventory(holder, SIZE, GuiTitles.format("Border Visuals"));
+        holder.setInventory(inventory);
+        fill(inventory);
+
+        inventory.setItem(10, toggleItem(Material.TINTED_GLASS, "Advanced Visuals", plugin.settings().worldGuardBorderAdvancedVisualsEnabled()));
+        inventory.setItem(11, item(plugin.settings().worldGuardBorderCollisionMaterial(), "{theme}Border Block", List.of(
+                "{white}Current: {theme}" + plugin.settings().worldGuardBorderCollisionMaterial().name(),
+                "{white}Click to choose block."
+        )));
+        inventory.setItem(12, item(Material.RED_DYE, "{theme}Visual Color", List.of(
+                "{white}Current: {theme}" + visibleColorValue(),
+                "{white}Click to edit."
+        )));
+        inventory.setItem(13, item(Material.SPYGLASS, "{theme}Visual Range", List.of(
+                "{white}Current: {theme}" + plugin.settings().worldGuardBorderVisualRange(),
+                "{white}Click to edit."
+        )));
+        inventory.setItem(14, item(Material.COMPASS, "{theme}Scan Radius", List.of(
+                "{white}Current: {theme}" + plugin.settings().worldGuardBorderRadius(),
+                "{white}Click to edit."
+        )));
+        inventory.setItem(15, item(Material.SCAFFOLDING, "{theme}Border Height", List.of(
+                "{white}Current: {theme}" + plugin.settings().worldGuardBorderHeight(),
+                "{white}Click to edit."
+        )));
+        inventory.setItem(16, toggleItem(Material.FEATHER, "Empty Blocks Only", plugin.settings().worldGuardBorderOnlyAir()));
+        inventory.setItem(19, item(Material.HOPPER, "{theme}Border Cache", List.of(
+                "{white}Current: {theme}" + plugin.settings().worldGuardBorderCacheSeconds() + "s",
+                "{white}Click to edit."
+        )));
+        inventory.setItem(20, item(Material.PISTON, "{theme}Pushback Multiplier", List.of(
+                "{white}Current: {theme}" + NumberFormatters.money(plugin.settings().worldGuardBorderPushbackMultiplier()) + "x",
+                "{white}Click to edit."
+        )));
+        inventory.setItem(21, item(Material.ENDER_PEARL, "{theme}Pearl Impact Radius", List.of(
+                "{white}Current: {theme}" + plugin.settings().worldGuardBorderPearlImpactRadius(),
+                "{white}Click to edit."
+        )));
+        inventory.setItem(22, item(Material.CLOCK, "{theme}Pearl Impact Duration", List.of(
+                "{white}Current: {theme}" + plugin.settings().worldGuardBorderPearlImpactDurationTicks() + " ticks",
+                "{white}Click to edit."
+        )));
+
+        inventory.setItem(BACK_SLOT, buttons.back());
+        player.openInventory(inventory);
+    }
+
+    @EventHandler
+    public void onClick(InventoryClickEvent event) {
+        if (event.getView().getTopInventory().getHolder() instanceof MaterialChooserHolder holder) {
+            handleMaterialChooserClick(event, holder);
+            return;
+        }
+        if (event.getView().getTopInventory().getHolder() instanceof TriStateSelectionHolder holder) {
+            handleCoreSelectorClick(event, holder);
+            return;
+        }
+        if (!(event.getView().getTopInventory().getHolder() instanceof EditorHolder holder)) {
+            return;
+        }
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+        if (!player.hasPermission(FoCombatTag.ADMIN_PERMISSION)) {
+            event.setCancelled(true);
+            player.closeInventory();
+            plugin.messages().send(player, "no-permission");
+            return;
+        }
+        int rawSlot = event.getRawSlot();
+        if (rawSlot >= event.getView().getTopInventory().getSize()) {
+            return;
+        }
+        event.setCancelled(true);
+        if (holder.view() == View.MAIN) {
+            handleMainClick(player, rawSlot);
+        } else if (holder.view() == View.COMMANDS) {
+            handleCommandsClick(player, holder.page(), rawSlot, event.getClick());
+        } else {
+            handleBorderVisualsClick(player, rawSlot);
+        }
+    }
+
+    private void handleMainClick(Player player, int slot) {
+        switch (slot) {
+            case 10 -> startNumberPrompt(player, PromptType.DURATION);
+            case 11 -> startNumberPrompt(player, PromptType.BORDER_CACHE, View.MAIN);
+            case 12 -> toggle(player, "worldguard.border.enabled", "WorldGuard border");
+            case 13 -> openBorderMaterialChooser(player, View.MAIN);
+            case 14 -> toggle(player, "commands.block-while-tagged", "Command blocking");
+            case 15 -> openCommands(player, 0);
+            case 16 -> openBorderVisuals(player);
+            case 19 -> startNumberPrompt(player, PromptType.PUSHBACK_MULTIPLIER, View.MAIN);
+            case 20 -> toggle(player, "combat.kill-on-logout", "Kill on logout");
+            case 21 -> openEnclosedRegions(player, 0);
+            case 22 -> toggle(player, "combat.disable-elytra-while-tagged", "Disable elytra");
+            case 23 -> cyclePearlCooldownMode(player);
+            case 24 -> startNumberPrompt(player, PromptType.PEARL_COOLDOWN);
+            case 25 -> toggle(player, "combat.tag-player-explosions", "Player explosions");
+            default -> {
+            }
+        }
+    }
+
+    private void handleBorderVisualsClick(Player player, int slot) {
+        if (slot == BACK_SLOT) {
+            openMain(player);
+            return;
+        }
+        switch (slot) {
+            case 10 -> save(player, "worldguard.border.advanced-visuals-enabled", !plugin.settings().worldGuardBorderAdvancedVisualsEnabled(),
+                    "Advanced visuals", !plugin.settings().worldGuardBorderAdvancedVisualsEnabled() ? "enabled" : "disabled", View.BORDER_VISUALS);
+            case 11 -> openBorderMaterialChooser(player, View.BORDER_VISUALS);
+            case 12 -> startTextPrompt(player, PromptType.BORDER_VISUAL_COLOR);
+            case 13 -> startNumberPrompt(player, PromptType.BORDER_VISUAL_RANGE);
+            case 14 -> startNumberPrompt(player, PromptType.BORDER_RADIUS);
+            case 15 -> startNumberPrompt(player, PromptType.BORDER_HEIGHT);
+            case 16 -> save(player, "worldguard.border.only-air", !plugin.settings().worldGuardBorderOnlyAir(),
+                    "Empty blocks only", !plugin.settings().worldGuardBorderOnlyAir() ? "enabled" : "disabled", View.BORDER_VISUALS);
+            case 19 -> startNumberPrompt(player, PromptType.BORDER_CACHE);
+            case 20 -> startNumberPrompt(player, PromptType.PUSHBACK_MULTIPLIER);
+            case 21 -> startNumberPrompt(player, PromptType.PEARL_IMPACT_RADIUS);
+            case 22 -> startNumberPrompt(player, PromptType.PEARL_IMPACT_DURATION);
+            default -> {
+            }
+        }
+    }
+
+    private void handleCommandsClick(Player player, int page, int slot, ClickType clickType) {
+        if (slot == BACK_SLOT) {
+            openMain(player);
+            return;
+        }
+        if (slot == 29) {
+            startCommandPrompt(player);
+            return;
+        }
+        if (slot == PREVIOUS_PAGE_SLOT) {
+            openCommands(player, page - 1);
+            return;
+        }
+        if (slot == NEXT_PAGE_SLOT) {
+            openCommands(player, page + 1);
+            return;
+        }
+        int slotIndex = indexOfCommandSlot(slot);
+        if (slotIndex < 0) {
+            return;
+        }
+        int commandIndex = page * COMMAND_SLOTS.length + slotIndex;
+        List<String> commands = configuredAllowedCommands();
+        if (commandIndex >= commands.size()) {
+            return;
+        }
+        if (clickType == ClickType.SHIFT_RIGHT) {
+            String removed = commands.remove(commandIndex);
+            saveList(player, "commands.allowed-while-tagged", commands, "Allowed commands", commands.size() + " entries");
+            plugin.messages().send(player, "editor-command-removed", Map.of("{command}", removed));
+            openCommands(player, page);
+        }
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        warnedNativeFallback.remove(event.getPlayer().getUniqueId());
+        materialChooserReturnViews.remove(event.getPlayer().getUniqueId());
+        plugin.clearDialogInput(event.getPlayer());
+    }
+
+    @EventHandler
+    public void onDrag(InventoryDragEvent event) {
+        InventoryHolder holder = event.getView().getTopInventory().getHolder();
+        if (!(holder instanceof EditorHolder) && !(holder instanceof TriStateSelectionHolder) && !(holder instanceof MaterialChooserHolder)) {
+            return;
+        }
+        int topSize = event.getView().getTopInventory().getSize();
+        for (int slot : event.getRawSlots()) {
+            if (slot < topSize) {
+                event.setCancelled(true);
+                return;
+            }
+        }
+    }
+
+    private void startNumberPrompt(Player player, PromptType promptType) {
+        startNumberPrompt(player, promptType, promptType.reopenView());
+    }
+
+    private void startNumberPrompt(Player player, PromptType promptType, View reopenView) {
+        Prompt prompt = Prompt.number(promptType, reopenView);
+        openNumberDialog(player, prompt);
+    }
+
+    private void startTextPrompt(Player player, PromptType promptType) {
+        Prompt prompt = Prompt.text(promptType, promptType.reopenView());
+        openTextDialog(player, prompt);
+    }
+
+    private void startCommandPrompt(Player player) {
+        Prompt prompt = Prompt.command();
+        openCommandDialog(player, prompt);
+    }
+
+    private void handlePrompt(Player player, Prompt prompt, String input) {
+        if (!player.hasPermission(FoCombatTag.ADMIN_PERMISSION)) {
+            plugin.messages().send(player, "no-permission");
+            return;
+        }
+        if (input.equalsIgnoreCase("cancel")) {
+            plugin.messages().send(player, "editor-prompt-cancelled");
+            reopenPromptPage(player, prompt);
+            return;
+        }
+        if (input.isBlank()) {
+            plugin.messages().send(player, "editor-save-failed", Map.of("{error}", "Empty input"));
+            reopenPromptPage(player, prompt);
+            return;
+        }
+        if (prompt.type() == PromptType.ADD_COMMAND) {
+            addAllowedCommand(player, input);
+            return;
+        }
+        if (prompt.type().text()) {
+            saveText(player, prompt, input);
+            return;
+        }
+        saveNumber(player, prompt, input);
+    }
+
+    private void cancelPrompt(Player player, Prompt prompt) {
+        plugin.messages().send(player, "editor-prompt-cancelled");
+        reopenPromptPage(player, prompt);
+    }
+
+    private void saveNumber(Player player, Prompt prompt, String input) {
+        PromptType type = prompt.type();
+        if (type.decimal()) {
+            saveDecimalNumber(player, prompt, input);
+            return;
+        }
+        int value;
+        try {
+            value = Integer.parseInt(input);
+        } catch (NumberFormatException exception) {
+            plugin.messages().send(player, "editor-invalid-number", Map.of(
+                    "{min}", type.minText(),
+                    "{max}", type.maxText()
+            ));
+            reopenPromptPage(player, prompt);
+            return;
+        }
+        if (value < type.min() || value > type.max()) {
+            plugin.messages().send(player, "editor-invalid-number", Map.of(
+                    "{min}", type.minText(),
+                    "{max}", type.maxText()
+            ));
+            reopenPromptPage(player, prompt);
+            return;
+        }
+        save(player, type.path(), value, type.setting(), type.displayValue(value), prompt.reopenView());
+    }
+
+    private void saveDecimalNumber(Player player, Prompt prompt, String input) {
+        PromptType type = prompt.type();
+        double value;
+        try {
+            value = Double.parseDouble(stripMultiplierSuffix(input));
+        } catch (NumberFormatException exception) {
+            plugin.messages().send(player, "editor-invalid-number", Map.of(
+                    "{min}", type.minText(),
+                    "{max}", type.maxText()
+            ));
+            reopenPromptPage(player, prompt);
+            return;
+        }
+        if (!Double.isFinite(value) || value < type.min() || value > type.max()) {
+            plugin.messages().send(player, "editor-invalid-number", Map.of(
+                    "{min}", type.minText(),
+                    "{max}", type.maxText()
+            ));
+            reopenPromptPage(player, prompt);
+            return;
+        }
+        save(player, type.path(), value, type.setting(), type.displayValue(value), prompt.reopenView());
+    }
+
+    private void saveText(Player player, Prompt prompt, String input) {
+        PromptType type = prompt.type();
+        String value = input.trim();
+        if (type == PromptType.BORDER_VISUAL_COLOR) {
+            if (!isValidColorValue(value)) {
+                plugin.messages().send(player, "editor-save-failed", Map.of("{error}", "Use #RRGGBB or a supported color name"));
+                openBorderVisuals(player);
+                return;
+            }
+            save(player, type.path(), normalizeColorValue(value), type.setting(), normalizeColorValue(value), prompt.reopenView());
+        }
+    }
+
+    private String currentNumber(PromptType type) {
+        return switch (type) {
+            case DURATION -> String.valueOf(plugin.settings().combatDurationSeconds());
+            case BORDER_CACHE -> String.valueOf(plugin.settings().worldGuardBorderCacheSeconds());
+            case PUSHBACK_MULTIPLIER -> NumberFormatters.money(plugin.settings().worldGuardBorderPushbackMultiplier());
+            case PEARL_COOLDOWN -> String.valueOf(plugin.settings().pearlCooldownSeconds());
+            case BORDER_VISUAL_RANGE -> String.valueOf(plugin.settings().worldGuardBorderVisualRange());
+            case BORDER_RADIUS -> String.valueOf(plugin.settings().worldGuardBorderRadius());
+            case BORDER_HEIGHT -> String.valueOf(plugin.settings().worldGuardBorderHeight());
+            case PEARL_IMPACT_RADIUS -> String.valueOf(plugin.settings().worldGuardBorderPearlImpactRadius());
+            case PEARL_IMPACT_DURATION -> String.valueOf(plugin.settings().worldGuardBorderPearlImpactDurationTicks());
+            default -> "0";
+        };
+    }
+
+    private String currentText(PromptType type) {
+        return switch (type) {
+            case BORDER_VISUAL_COLOR -> colorValue();
+            default -> "";
+        };
+    }
+
+    private void addAllowedCommand(Player player, String input) {
+        String normalized = normalizeCommand(input);
+        List<String> commands = configuredAllowedCommands();
+        boolean exists = commands.stream().map(this::normalizeCommand).anyMatch(normalized::equals);
+        if (!exists) {
+            commands.add(normalized);
+        }
+        saveList(player, "commands.allowed-while-tagged", commands, "Allowed commands", commands.size() + " entries");
+        openCommands(player, Math.max(0, (commands.size() - 1) / COMMAND_SLOTS.length));
+    }
+
+    private void save(Player player, String path, Object value, String setting, String displayValue) {
+        save(player, path, value, setting, displayValue, View.MAIN);
+    }
+
+    private void save(Player player, String path, Object value, String setting, String displayValue, View reopenView) {
+        try {
+            FileConfiguration config = plugin.getConfig();
+            config.set(path, value);
+            plugin.saveConfig();
+            plugin.reloadPluginQuietly();
+            plugin.messages().send(player, "editor-saved", Map.of("{setting}", setting, "{value}", displayValue));
+            openView(player, reopenView);
+        } catch (RuntimeException exception) {
+            plugin.logError("Editor save failed: " + exception.getMessage(), exception);
+            plugin.messages().send(player, "editor-save-failed", Map.of("{error}", exception.getMessage()));
+        }
+    }
+
+    private void saveList(Player player, String path, List<String> value, String setting, String displayValue) {
+        try {
+            FileConfiguration config = plugin.getConfig();
+            config.set(path, value);
+            plugin.saveConfig();
+            plugin.reloadPluginQuietly();
+            plugin.messages().send(player, "editor-saved", Map.of("{setting}", setting, "{value}", displayValue));
+        } catch (RuntimeException exception) {
+            plugin.logError("Editor save failed: " + exception.getMessage(), exception);
+            plugin.messages().send(player, "editor-save-failed", Map.of("{error}", exception.getMessage()));
+        }
+    }
+
+    private void toggle(Player player, String path, String displayName) {
+        boolean next = !plugin.getConfig().getBoolean(path);
+        save(player, path, next, displayName, next ? "enabled" : "disabled");
+    }
+
+    private void cyclePearlCooldownMode(Player player) {
+        PearlCooldownMode next = plugin.settings().pearlCooldownMode().next();
+        try {
+            FileConfiguration config = plugin.getConfig();
+            config.set("combat.pearl-cooldown.mode", next.configValue());
+            config.set("combat.pearl-cooldown.enabled", null);
+            plugin.saveConfig();
+            plugin.reloadPluginQuietly();
+            plugin.messages().send(player, "editor-saved", Map.of(
+                    "{setting}", "Pearl cooldown",
+                    "{value}", next.displayName()
+            ));
+            openMain(player);
+        } catch (RuntimeException exception) {
+            plugin.logError("Editor save failed: " + exception.getMessage(), exception);
+            plugin.messages().send(player, "editor-save-failed", Map.of("{error}", exception.getMessage()));
+        }
+    }
+
+    private void reopenPromptPage(Player player, Prompt prompt) {
+        if (prompt.type() == PromptType.ADD_COMMAND) {
+            openCommands(player, 0);
+        } else if (prompt.reopenView() == View.BORDER_VISUALS) {
+            openBorderVisuals(player);
+        } else if (prompt.reopenView() == View.ENCLOSED_REGIONS) {
+            openEnclosedRegions(player, 0);
+        } else {
+            openMain(player);
+        }
+    }
+
+    private void openBorderMaterialChooser(Player player, View returnView) {
+        openBorderMaterialChooser(player, returnView, 0, "");
+    }
+
+    private void openBorderMaterialChooser(Player player, View returnView, int page, String filter) {
+        materialChooserReturnViews.put(player.getUniqueId(), returnView == null ? View.BORDER_VISUALS : returnView);
+        MaterialChooserMenus.open(player, borderMaterialRequest(page, filter));
+    }
+
+    private MaterialChooserRequest borderMaterialRequest(int page, String filter) {
+        Material current = plugin.settings().worldGuardBorderCollisionMaterial();
+        return MaterialChooserRequest.builder()
+                .title("Border Block")
+                .mode(MaterialChooserMode.SINGLE_SELECT)
+                .availableMaterials(MaterialTypes.allBlocks())
+                .selectedMaterials(Set.of(current))
+                .page(page)
+                .filter(filter)
+                .showBack(true)
+                .showSearch(true)
+                .buttons(buttons)
+                .extraLore(material -> List.of(FoStyle.WHITE + "Config value: " + FoStyle.THEME + material.name()))
+                .build();
+    }
+
+    private void handleMaterialChooserClick(InventoryClickEvent event, MaterialChooserHolder holder) {
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+        event.setCancelled(true);
+        if (!player.hasPermission(FoCombatTag.ADMIN_PERMISSION)) {
+            player.closeInventory();
+            plugin.messages().send(player, "no-permission");
+            return;
+        }
+        int rawSlot = event.getRawSlot();
+        if (rawSlot >= event.getView().getTopInventory().getSize()) {
+            return;
+        }
+        MaterialChooserClick click = MaterialChooserMenus.handleClick(rawSlot, holder);
+        if (click.action() == MaterialChooserActionType.NONE) {
+            return;
+        }
+        switch (click.action()) {
+            case BACK -> openMaterialReturnView(player);
+            case PREVIOUS_PAGE, NEXT_PAGE, CLEAR_SEARCH -> MaterialChooserMenus.open(player, click.nextRequest());
+            case SEARCH -> startMaterialSearchPrompt(player, holder.request().filter());
+            case SELECT, TOGGLE -> saveBorderMaterialChoice(player, click.material());
+            default -> {
+            }
+        }
+    }
+
+    private void openMaterialReturnView(Player player) {
+        View returnView = materialChooserReturnViews.remove(player.getUniqueId());
+        openView(player, returnView == null ? View.BORDER_VISUALS : returnView);
+    }
+
+    private void saveBorderMaterialChoice(Player player, Material material) {
+        if (material == null || !material.isBlock()) {
+            plugin.messages().send(player, "editor-save-failed", Map.of("{error}", "Unknown block material"));
+            openMaterialReturnView(player);
+            return;
+        }
+        View returnView = materialChooserReturnViews.remove(player.getUniqueId());
+        save(player, "worldguard.border.collision-material", material.name(), "Border block", material.name(),
+                returnView == null ? View.BORDER_VISUALS : returnView);
+    }
+
+    private void startMaterialSearchPrompt(Player player, String currentFilter) {
+        View returnView = materialChooserReturnViews.getOrDefault(player.getUniqueId(), View.BORDER_VISUALS);
+        TextDialogRequest request = new TextDialogRequest(
+                "Search",
+                List.of("Enter a block material search term."),
+                "Search",
+                currentFilter,
+                "glass",
+                DialogButton.search(),
+                DialogButton.cancel(),
+                320,
+                300,
+                64,
+                true,
+                true,
+                false
+        );
+        openTextInput(player, request,
+                input -> openBorderMaterialChooser(player, returnView, 0, input),
+                () -> openBorderMaterialChooser(player, returnView, 0, currentFilter),
+                "material search");
+    }
+
+    private void openView(Player player, View view) {
+        if (view == View.BORDER_VISUALS) {
+            openBorderVisuals(player);
+        } else if (view == View.COMMANDS) {
+            openCommands(player, 0);
+        } else {
+            openMain(player);
+        }
+    }
+
+    private int indexOfCommandSlot(int slot) {
+        for (int index = 0; index < COMMAND_SLOTS.length; index++) {
+            if (COMMAND_SLOTS[index] == slot) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private List<String> configuredAllowedCommands() {
+        if (plugin.getConfig().isSet("commands.allowed-while-tagged")) {
+            return new ArrayList<>(plugin.getConfig().getStringList("commands.allowed-while-tagged"));
+        }
+        return new ArrayList<>(plugin.settings().allowedCommandsWhileTagged());
+    }
+
+    private List<String> configuredEnclosedRegions() {
+        List<String> regions = plugin.getConfig().isSet("worldguard.enclosed-regions")
+                ? plugin.getConfig().getStringList("worldguard.enclosed-regions")
+                : new ArrayList<>(plugin.settings().enclosedWorldGuardRegions());
+        return regions.stream()
+                .filter(region -> region != null && !region.isBlank())
+                .map(region -> region.trim().toLowerCase(Locale.ROOT))
+                .distinct()
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+    }
+
+    private TriStateSelectionRequest enclosedRegionsRequest(int page, String filter) {
+        List<String> selected = configuredEnclosedRegions();
+        List<TriStateSelectionEntry> entries = StringSelectionEntries.fromKeys(plugin.worldGuardHook().regionIds(), selected);
+        Map<String, TriStateSelectionState> states = new LinkedHashMap<>();
+        for (String region : selected) {
+            states.put(region, TriStateSelectionState.ENABLED);
+        }
+        return TriStateSelectionRequest.builder()
+                .title("Enclosed Regions")
+                .entries(entries)
+                .states(states)
+                .cycleOrder(List.of(TriStateSelectionState.NEUTRAL, TriStateSelectionState.ENABLED))
+                .page(page)
+                .filter(filter)
+                .showBack(true)
+                .showSearch(true)
+                .enabledLabel("Selected")
+                .neutralLabel("Not Selected")
+                .clickHint("Click to toggle.")
+                .emptyTitle("No WorldGuard Regions")
+                .emptyLore(List.of("Create WorldGuard regions, then reopen this selector."))
+                .build();
+    }
+
+    private void handleCoreSelectorClick(InventoryClickEvent event, TriStateSelectionHolder holder) {
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+        event.setCancelled(true);
+        if (!player.hasPermission(FoCombatTag.ADMIN_PERMISSION)) {
+            player.closeInventory();
+            plugin.messages().send(player, "no-permission");
+            return;
+        }
+        int rawSlot = event.getRawSlot();
+        if (rawSlot >= event.getView().getTopInventory().getSize()) {
+            return;
+        }
+        TriStateSelectionClick click = TriStateSelectionMenus.handleClick(rawSlot, holder);
+        if (click.action() == TriStateSelectionActionType.NONE) {
+            return;
+        }
+        switch (click.action()) {
+            case BACK -> openMain(player);
+            case PREVIOUS_PAGE, NEXT_PAGE, CLEAR_SEARCH -> TriStateSelectionMenus.open(player, click.nextRequest());
+            case SEARCH -> startRegionSearchPrompt(player, holder.request().filter());
+            case TOGGLE -> saveEnclosedRegionStates(player, click.nextRequest());
+            default -> {
+            }
+        }
+    }
+
+    private void saveEnclosedRegionStates(Player player, TriStateSelectionRequest request) {
+        List<String> selected = request.states().entrySet().stream()
+                .filter(entry -> entry.getValue() == TriStateSelectionState.ENABLED)
+                .map(Map.Entry::getKey)
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .toList();
+        saveList(player, "worldguard.enclosed-regions", selected, "Enclosed regions", selected.size() + " selected");
+        openEnclosedRegions(player, request.page(), request.filter());
+    }
+
+    private void startRegionSearchPrompt(Player player, String currentFilter) {
+        TextDialogRequest request = new TextDialogRequest(
+                "Search",
+                List.of("Enter a WorldGuard region search term."),
+                "Search",
+                currentFilter,
+                "spawn",
+                DialogButton.search(),
+                DialogButton.cancel(),
+                320,
+                300,
+                64,
+                true,
+                true,
+                false
+        );
+        openTextInput(player, request, input -> openEnclosedRegions(player, 0, input), () -> openEnclosedRegions(player, 0, currentFilter), "search");
+    }
+
+    private void fill(Inventory inventory) {
+        ItemStack filler = EditorItemFactory.filler();
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            inventory.setItem(slot, filler);
+        }
+    }
+
+    private ItemStack toggleItem(Material material, String name, boolean enabled) {
+        return item(material, (enabled ? "{good}" : "{bad}") + name, List.of(
+                "{white}State: " + (enabled ? "{good}Enabled" : "{bad}Disabled"),
+                "{white}Click to toggle."
+        ));
+    }
+
+    private ItemStack pearlCooldownModeItem() {
+        PearlCooldownMode current = plugin.settings().pearlCooldownMode();
+        List<String> lore = new ArrayList<>();
+        lore.add("{white}Current: {theme}" + current.displayName());
+        lore.add("{white}Options:");
+        for (PearlCooldownMode mode : PearlCooldownMode.values()) {
+            lore.add((mode == current ? "{theme}" : "{white}") + "- " + mode.displayName());
+        }
+        lore.add("{white}Click to cycle.");
+        return item(Material.ENDER_PEARL, "{theme}Pearl Cooldown", lore);
+    }
+
+    private ItemStack item(Material material, String name, List<String> lore) {
+        ItemStack stack = new ItemStack(material);
+        ItemMeta meta = stack.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(plugin.messages().renderTemplate(name, Map.of()));
+            List<String> coloredLore = new ArrayList<>();
+            for (String line : lore) {
+                coloredLore.add(plugin.messages().renderTemplate(line, Map.of()));
+            }
+            meta.setLore(coloredLore);
+            stack.setItemMeta(meta);
+        }
+        return stack;
+    }
+
+    private String normalizeCommand(String command) {
+        String normalized = command == null ? "" : command.trim().toLowerCase(Locale.ROOT);
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized.replaceAll("\\s+", " ");
+    }
+
+    private String stripMultiplierSuffix(String input) {
+        String normalized = input.trim().toLowerCase(Locale.ROOT);
+        return normalized.endsWith("x") ? normalized.substring(0, normalized.length() - 1).trim() : normalized;
+    }
+
+    private String colorValue() {
+        return String.format(Locale.ROOT, "#%02x%02x%02x",
+                plugin.settings().worldGuardBorderVisualColor().getRed(),
+                plugin.settings().worldGuardBorderVisualColor().getGreen(),
+                plugin.settings().worldGuardBorderVisualColor().getBlue());
+    }
+
+    private String visibleColorValue() {
+        return "#" + colorValue();
+    }
+
+    private String currentTextMessageValue(PromptType promptType) {
+        if (promptType == PromptType.BORDER_VISUAL_COLOR) {
+            return visibleColorValue();
+        }
+        return currentText(promptType);
+    }
+
+    private String normalizeColorValue(String input) {
+        String normalized = input.trim().toLowerCase(Locale.ROOT);
+        if (isNamedColor(normalized)) {
+            return normalized;
+        }
+        String hex = normalized.startsWith("#") ? normalized.substring(1) : normalized;
+        if (hex.startsWith("0x")) {
+            hex = hex.substring(2);
+        }
+        return "#" + hex;
+    }
+
+    private boolean isValidColorValue(String input) {
+        String normalized = input.trim().toLowerCase(Locale.ROOT);
+        if (isNamedColor(normalized)) {
+            return true;
+        }
+        String hex = normalized.startsWith("#") ? normalized.substring(1) : normalized;
+        if (hex.startsWith("0x")) {
+            hex = hex.substring(2);
+        }
+        return hex.matches("[0-9a-f]{6}");
+    }
+
+    private boolean isNamedColor(String value) {
+        return switch (value) {
+            case "red", "green", "blue", "yellow", "orange", "purple", "pink", "aqua", "cyan", "white" -> true;
+            default -> false;
+        };
+    }
+
+    private void warnNativeFallback(Player player) {
+        NativeDialogAvailability availability = plugin.core().nativeDialogs().availability();
+        if (!availability.configEnabled() || !plugin.core().nativeDialogs().warnOnFallback() || availability.canUseNativeDialogs()) {
+            return;
+        }
+        if (warnedNativeFallback.add(player.getUniqueId())) {
+            plugin.messages().send(player, "native-dialog-fallback");
+        }
+    }
+
+    private void openCommandDialog(Player player, Prompt prompt) {
+        TextDialogRequest request = TextDialogRequest.command(List.of(
+                "Enter a command pattern.",
+                "Examples: team chat, team *"
+        ), "", "team *");
+        openTextInput(player, request, input -> handlePrompt(player, prompt, input), () -> cancelPrompt(player, prompt), "command");
+    }
+
+    private void openNumberDialog(Player player, Prompt prompt) {
+        PromptType promptType = prompt.type();
+        String current = currentNumber(promptType);
+        TextDialogRequest request = TextDialogRequest.number(List.of(
+                "Enter " + promptType.setting() + ".",
+                "Range: " + promptType.minText() + " to " + promptType.maxText() + ".",
+                "Current: " + current
+        ), current, promptType.decimal() ? "1.25" : promptType.minText());
+        openTextInput(player, request, input -> handlePrompt(player, prompt, input), () -> cancelPrompt(player, prompt), "number");
+    }
+
+    private void openTextDialog(Player player, Prompt prompt) {
+        PromptType promptType = prompt.type();
+        String current = currentText(promptType);
+        TextDialogRequest request = TextDialogRequest.text(promptLines(
+                "Enter " + promptType.setting() + ".",
+                "Current: " + currentTextMessageValue(promptType) + ".",
+                promptType.hint()
+        ), current, textPlaceholder(promptType));
+        openTextInput(player, request, input -> handlePrompt(player, prompt, input), () -> cancelPrompt(player, prompt), "text");
+    }
+
+    private void openTextInput(Player player, TextDialogRequest request, java.util.function.Consumer<String> onSubmit, Runnable onCancel, String type) {
+        try {
+            boolean nativeOpened = EditorDialogInputs.openTextFromInventory(
+                    plugin,
+                    plugin.inventoryCloseSuppressor(),
+                    plugin.dialogService(),
+                    player,
+                    request,
+                    input -> onSubmit.accept(input == null ? "" : input.trim()),
+                    onCancel
+            );
+            if (!nativeOpened) {
+                warnNativeFallback(player);
+            }
+        } catch (RuntimeException | LinkageError exception) {
+            plugin.logWarning("Editor " + type + " input failed: " + exception.getMessage());
+            plugin.messages().send(player, "editor-save-failed", Map.of("{error}", "Input failed"));
+            if (onCancel != null) {
+                onCancel.run();
+            }
+        }
+    }
+
+    private List<String> promptLines(String... lines) {
+        List<String> result = new ArrayList<>();
+        for (String line : lines) {
+            if (line != null && !line.isBlank()) {
+                result.add(line);
+            }
+        }
+        return result;
+    }
+
+    private String textPlaceholder(PromptType promptType) {
+        return switch (promptType) {
+            case BORDER_VISUAL_COLOR -> "#ff3d5a";
+            default -> "";
+        };
+    }
+
+    private enum View {
+        MAIN,
+        COMMANDS,
+        BORDER_VISUALS,
+        ENCLOSED_REGIONS
+    }
+
+    private enum PromptType {
+        ADD_COMMAND("Allowed command", "", 0.0D, 0.0D, "", InputKind.COMMAND, View.COMMANDS, ""),
+        DURATION("Combat timer", "combat.duration-seconds", 1.0D, 3600.0D, "s", InputKind.INTEGER, View.MAIN, ""),
+        BORDER_CACHE("Border cache", "worldguard.border.cache-seconds", 0.0D, 60.0D, "s", InputKind.INTEGER, View.BORDER_VISUALS, ""),
+        PUSHBACK_MULTIPLIER("Pushback multiplier", "worldguard.border.pushback-multiplier", 0.0D, 3.0D, "x", InputKind.DECIMAL, View.BORDER_VISUALS, ""),
+        PEARL_COOLDOWN("Pearl cooldown", "combat.pearl-cooldown.seconds", 1.0D, 3600.0D, "s", InputKind.INTEGER, View.MAIN, ""),
+        BORDER_VISUAL_COLOR("Visual color", "worldguard.border.visual-color", 0.0D, 0.0D, "", InputKind.COLOR, View.BORDER_VISUALS, "Use #RRGGBB or names like red, blue, green, yellow, purple."),
+        BORDER_VISUAL_RANGE("Visual range", "worldguard.border.visual-range", 1.0D, 16.0D, "", InputKind.INTEGER, View.BORDER_VISUALS, ""),
+        BORDER_RADIUS("Scan radius", "worldguard.border.radius", 2.0D, 16.0D, "", InputKind.INTEGER, View.BORDER_VISUALS, ""),
+        BORDER_HEIGHT("Border height", "worldguard.border.height", 1.0D, 12.0D, "", InputKind.INTEGER, View.BORDER_VISUALS, ""),
+        PEARL_IMPACT_RADIUS("Pearl impact radius", "worldguard.border.pearl-impact.radius", 1.0D, 8.0D, "", InputKind.INTEGER, View.BORDER_VISUALS, ""),
+        PEARL_IMPACT_DURATION("Pearl impact duration", "worldguard.border.pearl-impact.duration-ticks", 1.0D, 100.0D, " ticks", InputKind.INTEGER, View.BORDER_VISUALS, "");
+
+        private final String setting;
+        private final String path;
+        private final double min;
+        private final double max;
+        private final String suffix;
+        private final InputKind inputKind;
+        private final View reopenView;
+        private final String hint;
+
+        PromptType(String setting, String path, double min, double max, String suffix, InputKind inputKind, View reopenView, String hint) {
+            this.setting = setting;
+            this.path = path;
+            this.min = min;
+            this.max = max;
+            this.suffix = suffix;
+            this.inputKind = inputKind;
+            this.reopenView = reopenView;
+            this.hint = hint;
+        }
+
+        private String setting() {
+            return setting;
+        }
+
+        private String path() {
+            return path;
+        }
+
+        private double min() {
+            return min;
+        }
+
+        private double max() {
+            return max;
+        }
+
+        private boolean decimal() {
+            return inputKind == InputKind.DECIMAL;
+        }
+
+        private boolean text() {
+            return inputKind == InputKind.COLOR;
+        }
+
+        private View reopenView() {
+            return reopenView;
+        }
+
+        private String hint() {
+            return hint;
+        }
+
+        private String minText() {
+            return decimal() ? NumberFormatters.money(min) : String.valueOf((int) min);
+        }
+
+        private String maxText() {
+            return decimal() ? NumberFormatters.money(max) : String.valueOf((int) max);
+        }
+
+        private String displayValue(double value) {
+            return (decimal() ? NumberFormatters.money(value) : String.valueOf((int) value)) + suffix;
+        }
+
+    }
+
+    private enum InputKind {
+        COMMAND,
+        INTEGER,
+        DECIMAL,
+        COLOR
+    }
+
+    private record Prompt(PromptType type, View reopenView) {
+        private static Prompt command() {
+            return new Prompt(PromptType.ADD_COMMAND, View.COMMANDS);
+        }
+
+        private static Prompt number(PromptType type, View reopenView) {
+            return new Prompt(type, reopenView);
+        }
+
+        private static Prompt text(PromptType type, View reopenView) {
+            return new Prompt(type, reopenView);
+        }
+    }
+
+    private static final class EditorHolder implements InventoryHolder {
+        private final View view;
+        private final int page;
+        private Inventory inventory;
+
+        private EditorHolder(View view, int page) {
+            this.view = view;
+            this.page = page;
+        }
+
+        @Override
+        public Inventory getInventory() {
+            return inventory;
+        }
+
+        private void setInventory(Inventory inventory) {
+            this.inventory = inventory;
+        }
+
+        private View view() {
+            return view;
+        }
+
+        private int page() {
+            return page;
+        }
+    }
+}
