@@ -5,6 +5,10 @@ import me.foesio.core.dialog.NativeDialogAvailability;
 import me.foesio.core.dialog.TextDialogRequest;
 import me.foesio.core.editor.EditorDialogInputs;
 import me.foesio.core.editor.EditorItemFactory;
+import me.foesio.core.gui.EntryBrowserClick;
+import me.foesio.core.gui.EntryBrowserHolder;
+import me.foesio.core.gui.EntryBrowserMenus;
+import me.foesio.core.gui.EntryBrowserRequest;
 import me.foesio.core.gui.GuiButtonConfig;
 import me.foesio.core.gui.GuiSlots;
 import me.foesio.core.gui.GuiTitles;
@@ -54,11 +58,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class EditorGui implements Listener {
     private static final int SIZE = 36;
     private static final int ROWS = SIZE / GuiSlots.ROW_SIZE;
-    private static final int BOTTOM_ROW_START = GuiSlots.bottomRowStart(ROWS);
     private static final int BACK_SLOT = GuiSlots.bottomMiddleSlot(ROWS);
-    private static final int PREVIOUS_PAGE_SLOT = BOTTOM_ROW_START;
-    private static final int NEXT_PAGE_SLOT = BOTTOM_ROW_START + GuiSlots.ROW_SIZE - 1;
-    private static final int[] COMMAND_SLOTS = {10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 24, 25};
 
     private final FoCombatTag plugin;
     private final GuiButtonConfig buttons = GuiButtonConfig.defaults();
@@ -131,39 +131,34 @@ public final class EditorGui implements Listener {
     }
 
     private void openCommands(Player player, int page) {
-        List<String> commands = configuredAllowedCommands();
-        int maxPage = Math.max(0, (commands.size() - 1) / COMMAND_SLOTS.length);
-        page = Math.max(0, Math.min(maxPage, page));
-        EditorHolder holder = new EditorHolder(View.COMMANDS, page);
-        Inventory inventory = Bukkit.createInventory(holder, SIZE, GuiTitles.format("Allowed Commands"));
-        holder.setInventory(inventory);
-        fill(inventory);
+        openCommands(player, page, "");
+    }
 
-        int start = page * COMMAND_SLOTS.length;
-        for (int index = 0; index < COMMAND_SLOTS.length; index++) {
-            int commandIndex = start + index;
-            if (commandIndex >= commands.size()) {
-                break;
-            }
-            String command = commands.get(commandIndex);
-            inventory.setItem(COMMAND_SLOTS[index], item(Material.PAPER, "{theme}" + command, List.of(
-                    "{white}Shift right-click to remove.",
-                    "{white}Allowed while tagged."
-            )));
-        }
-
-        inventory.setItem(BACK_SLOT, buttons.back());
-        inventory.setItem(29, item(Material.LIME_DYE, "{good}Add Command", List.of(
-                "{white}Click to add a pattern.",
-                "{white}Examples: {theme}team chat{white}, {theme}team *"
-        )));
-        if (page > 0) {
-            inventory.setItem(PREVIOUS_PAGE_SLOT, buttons.previousPage(page, maxPage));
-        }
-        if (page < maxPage) {
-            inventory.setItem(NEXT_PAGE_SLOT, buttons.nextPage(page, maxPage));
-        }
-        player.openInventory(inventory);
+    private void openCommands(Player player, int page, String filter) {
+        List<CommandEntry> commandEntries = filteredCommandEntries(filter);
+        List<EntryBrowserRequest.Entry> entries = commandEntries.stream()
+                .map(entry -> EntryBrowserRequest.Entry.of(
+                        String.valueOf(entry.index()),
+                        item(Material.PAPER, "{theme}" + entry.command(), List.of(
+                                "{white}Shift right-click to remove.",
+                                "{white}Allowed while tagged."
+                        ))
+                ))
+                .toList();
+        EntryBrowserRequest request = EntryBrowserRequest.builder()
+                .title("Allowed Commands")
+                .entries(entries)
+                .page(page)
+                .filter(filter)
+                .buttons(buttons)
+                .showBack(true)
+                .addButton(item(Material.ANVIL, "{good}Add Command", List.of(
+                        "{white}Click to add a pattern.",
+                        "{white}Examples: {theme}team chat{white}, {theme}team *"
+                )))
+                .context(new CommandBrowserContext())
+                .build();
+        EntryBrowserMenus.open(player, request);
     }
 
     private void openBorderVisuals(Player player) {
@@ -217,6 +212,21 @@ public final class EditorGui implements Listener {
 
     @EventHandler
     public void onClick(InventoryClickEvent event) {
+        if (event.getView().getTopInventory().getHolder() instanceof EntryBrowserHolder holder) {
+            if (!(event.getWhoClicked() instanceof Player player)) {
+                return;
+            }
+            event.setCancelled(true);
+            if (!player.hasPermission(FoCombatTag.ADMIN_PERMISSION)) {
+                player.closeInventory();
+                plugin.messages().send(player, "no-permission");
+                return;
+            }
+            if (event.getClickedInventory() == event.getView().getTopInventory()) {
+                handleEntryBrowserClick(event, holder, player);
+            }
+            return;
+        }
         if (event.getView().getTopInventory().getHolder() instanceof MaterialChooserHolder holder) {
             handleMaterialChooserClick(event, holder);
             return;
@@ -244,11 +254,65 @@ public final class EditorGui implements Listener {
         event.setCancelled(true);
         if (holder.view() == View.MAIN) {
             handleMainClick(player, rawSlot);
-        } else if (holder.view() == View.COMMANDS) {
-            handleCommandsClick(player, holder.page(), rawSlot, event.getClick());
         } else {
             handleBorderVisualsClick(player, rawSlot);
         }
+    }
+
+    private void handleEntryBrowserClick(InventoryClickEvent event, EntryBrowserHolder holder, Player player) {
+        EntryBrowserClick click = EntryBrowserMenus.handleClick(event.getRawSlot(), holder, event.getClick());
+        switch (click.action()) {
+            case ENTRY -> {
+                if (click.clickType() != ClickType.SHIFT_RIGHT) {
+                    return;
+                }
+                int commandIndex;
+                try {
+                    commandIndex = Integer.parseInt(click.entryId());
+                } catch (NumberFormatException exception) {
+                    return;
+                }
+                List<String> commands = configuredAllowedCommands();
+                if (commandIndex < 0 || commandIndex >= commands.size()) {
+                    openCommands(player, holder.request().page(), holder.request().filter());
+                    return;
+                }
+                String removed = commands.remove(commandIndex);
+                saveList(player, "commands.allowed-while-tagged", commands, "Allowed commands", commands.size() + " entries");
+                plugin.messages().send(player, "editor-command-removed", Map.of("{command}", removed));
+                openCommands(player, holder.request().page(), holder.request().filter());
+            }
+            case ADD -> startCommandPrompt(player);
+            case BACK -> openMain(player);
+            case SEARCH -> openCommandSearch(player, holder.request().filter());
+            case CLEAR_SEARCH -> openCommands(player, 0, "");
+            case PREVIOUS_PAGE -> openCommands(player, holder.request().page() - 1, holder.request().filter());
+            case NEXT_PAGE -> openCommands(player, holder.request().page() + 1, holder.request().filter());
+            case EXTRA, NONE -> {
+            }
+        }
+    }
+
+    private void openCommandSearch(Player player, String currentFilter) {
+        TextDialogRequest request = new TextDialogRequest(
+                "Search",
+                List.of("Search allowed command patterns."),
+                "Search",
+                currentFilter,
+                "command pattern",
+                DialogButton.search(),
+                DialogButton.cancel(),
+                320,
+                300,
+                64,
+                true,
+                true,
+                false
+        );
+        openTextInput(player, request,
+                input -> openCommands(player, 0, input),
+                () -> openCommands(player, 0, currentFilter),
+                "command search");
     }
 
     private void handleMainClick(Player player, int slot) {
@@ -296,40 +360,6 @@ public final class EditorGui implements Listener {
         }
     }
 
-    private void handleCommandsClick(Player player, int page, int slot, ClickType clickType) {
-        if (slot == BACK_SLOT) {
-            openMain(player);
-            return;
-        }
-        if (slot == 29) {
-            startCommandPrompt(player);
-            return;
-        }
-        if (slot == PREVIOUS_PAGE_SLOT) {
-            openCommands(player, page - 1);
-            return;
-        }
-        if (slot == NEXT_PAGE_SLOT) {
-            openCommands(player, page + 1);
-            return;
-        }
-        int slotIndex = indexOfCommandSlot(slot);
-        if (slotIndex < 0) {
-            return;
-        }
-        int commandIndex = page * COMMAND_SLOTS.length + slotIndex;
-        List<String> commands = configuredAllowedCommands();
-        if (commandIndex >= commands.size()) {
-            return;
-        }
-        if (clickType == ClickType.SHIFT_RIGHT) {
-            String removed = commands.remove(commandIndex);
-            saveList(player, "commands.allowed-while-tagged", commands, "Allowed commands", commands.size() + " entries");
-            plugin.messages().send(player, "editor-command-removed", Map.of("{command}", removed));
-            openCommands(player, page);
-        }
-    }
-
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         warnedNativeFallback.remove(event.getPlayer().getUniqueId());
@@ -340,7 +370,10 @@ public final class EditorGui implements Listener {
     @EventHandler
     public void onDrag(InventoryDragEvent event) {
         InventoryHolder holder = event.getView().getTopInventory().getHolder();
-        if (!(holder instanceof EditorHolder) && !(holder instanceof TriStateSelectionHolder) && !(holder instanceof MaterialChooserHolder)) {
+        if (!(holder instanceof EntryBrowserHolder)
+                && !(holder instanceof EditorHolder)
+                && !(holder instanceof TriStateSelectionHolder)
+                && !(holder instanceof MaterialChooserHolder)) {
             return;
         }
         int topSize = event.getView().getTopInventory().getSize();
@@ -497,7 +530,7 @@ public final class EditorGui implements Listener {
             commands.add(normalized);
         }
         saveList(player, "commands.allowed-while-tagged", commands, "Allowed commands", commands.size() + " entries");
-        openCommands(player, Math.max(0, (commands.size() - 1) / COMMAND_SLOTS.length));
+        openCommands(player, 0);
     }
 
     private void save(Player player, String path, Object value, String setting, String displayValue) {
@@ -669,20 +702,24 @@ public final class EditorGui implements Listener {
         }
     }
 
-    private int indexOfCommandSlot(int slot) {
-        for (int index = 0; index < COMMAND_SLOTS.length; index++) {
-            if (COMMAND_SLOTS[index] == slot) {
-                return index;
-            }
-        }
-        return -1;
-    }
-
     private List<String> configuredAllowedCommands() {
         if (plugin.getConfig().isSet("commands.allowed-while-tagged")) {
             return new ArrayList<>(plugin.getConfig().getStringList("commands.allowed-while-tagged"));
         }
         return new ArrayList<>(plugin.settings().allowedCommandsWhileTagged());
+    }
+
+    private List<CommandEntry> filteredCommandEntries(String filter) {
+        String query = filter == null ? "" : filter.trim().toLowerCase(Locale.ROOT);
+        List<String> commands = configuredAllowedCommands();
+        List<CommandEntry> entries = new ArrayList<>();
+        for (int index = 0; index < commands.size(); index++) {
+            String command = commands.get(index);
+            if (query.isBlank() || command.toLowerCase(Locale.ROOT).contains(query)) {
+                entries.add(new CommandEntry(index, command));
+            }
+        }
+        return entries;
     }
 
     private List<String> configuredEnclosedRegions() {
@@ -1066,6 +1103,12 @@ public final class EditorGui implements Listener {
         private static Prompt text(PromptType type, View reopenView) {
             return new Prompt(type, reopenView);
         }
+    }
+
+    private record CommandEntry(int index, String command) {
+    }
+
+    private record CommandBrowserContext() {
     }
 
     private static final class EditorHolder implements InventoryHolder {
