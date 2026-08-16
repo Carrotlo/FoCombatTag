@@ -1,3 +1,5 @@
+# Need help or want support? Join the Discord: https://discord.gg/kEF77QCfu7
+
 # Seconds a player stays combat tagged after valid player damage.
 combat:
   duration-seconds: 15
@@ -7,6 +9,8 @@ combat:
   disable-elytra-while-tagged: false
   # If true, player-caused explosions such as end crystals, respawn anchors, beds, and TNT tag victims.
   tag-player-explosions: true
+  # If true, an ender pearl landing while already combat tagged resets the combat timer.
+  pearl-extends-combat: false
   # Optional ender pearl cooldown. Modes: always, when-tagged, never.
   pearl-cooldown:
     mode: never

@@ -21,6 +21,7 @@ public record Settings(
         boolean killOnLogout,
         boolean disableElytraWhileTagged,
         boolean tagPlayerExplosions,
+        boolean pearlExtendsCombat,
         PearlCooldownMode pearlCooldownMode,
         int pearlCooldownSeconds,
         Set<String> enabledWorlds,
@@ -59,6 +60,7 @@ public record Settings(
                 getBoolean(config, defaults, "combat.kill-on-logout", true),
                 getBoolean(config, defaults, "combat.disable-elytra-while-tagged", false),
                 getBoolean(config, defaults, "combat.tag-player-explosions", true),
+                getBoolean(config, defaults, "combat.pearl-extends-combat", false),
                 pearlCooldownMode,
                 clamp(getInt(config, defaults, "combat.pearl-cooldown.seconds", 5), 1, 3600),
                 lowerStrings(config, defaults, "combat.enabled-worlds"),
@@ -105,6 +107,7 @@ public record Settings(
             config.set("combat.tag-player-explosions", true);
             changed = true;
         }
+        changed |= setMissing(config, "combat.pearl-extends-combat", false);
 
         String legacyPath = "combat.pearl-cooldown.enabled";
         if (config.isSet(legacyPath) && !config.isSet("combat.pearl-cooldown.mode")) {
@@ -387,11 +390,6 @@ public record Settings(
 
         public String displayName() {
             return displayName;
-        }
-
-        public PearlCooldownMode next() {
-            PearlCooldownMode[] values = values();
-            return values[(ordinal() + 1) % values.length];
         }
 
         public static PearlCooldownMode fromConfig(String value) {

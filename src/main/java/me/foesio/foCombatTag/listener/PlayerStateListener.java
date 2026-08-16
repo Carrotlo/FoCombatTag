@@ -36,6 +36,7 @@ import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -45,6 +46,7 @@ public final class PlayerStateListener implements Listener {
     private final FoCombatTag plugin;
     private final Map<UUID, Long> pearlCooldowns = new ConcurrentHashMap<>();
     private final Map<UUID, TrackedPearl> trackedPearls = new ConcurrentHashMap<>();
+    private final Set<UUID> queuedBorderRenders = ConcurrentHashMap.newKeySet();
     private BukkitTask pearlGuardTask;
 
     public PlayerStateListener(FoCombatTag plugin) {
@@ -69,16 +71,16 @@ public final class PlayerStateListener implements Listener {
         if (samePosition(event.getFrom(), event.getTo())) {
             return;
         }
-        BorderPush enclosurePush = plugin.borderService().enclosedRegionEscapePush(event.getFrom(), event.getTo());
+        boolean insideEnclosedRegion = plugin.borderService().isEnclosedRegion(event.getFrom());
+        BorderPush enclosurePush = plugin.borderService().enclosedRegionEscapePush(event.getFrom(), event.getTo(), insideEnclosedRegion);
         if (enclosurePush != null) {
             event.setTo(event.getFrom());
             plugin.borderService().pushBackFromEnclosedExit(player, enclosurePush.direction());
             renderNextTick(player);
             return;
         }
-        boolean insideEnclosedRegion = plugin.borderService().isEnclosedRegion(event.getFrom());
-        if (!insideEnclosedRegion && plugin.borderService().shouldCheckBorderPush(player, event.getTo())) {
-            BorderPush borderPush = plugin.borderService().borderPush(player, event.getTo());
+        if (!insideEnclosedRegion && plugin.borderService().shouldCheckBorderPush(player, event.getTo(), false)) {
+            BorderPush borderPush = plugin.borderService().borderPush(player, event.getTo(), false);
             if (borderPush != null) {
                 plugin.borderService().pushBackOnce(player, borderPush.direction());
                 renderNextTick(player);
@@ -104,7 +106,7 @@ public final class PlayerStateListener implements Listener {
             }
         }
         if (!sameBlock(event.getFrom(), event.getTo())) {
-            plugin.borderService().render(player);
+            renderNextTick(player);
         }
     }
 
@@ -117,14 +119,14 @@ public final class PlayerStateListener implements Listener {
         if (!borderGuardEnabled(player) || event.getTo() == null) {
             return;
         }
-        BorderPush enclosurePush = plugin.borderService().enclosedRegionEscapePush(event.getFrom(), event.getTo());
+        boolean insideEnclosedRegion = plugin.borderService().isEnclosedRegion(event.getFrom());
+        BorderPush enclosurePush = plugin.borderService().enclosedRegionEscapePush(event.getFrom(), event.getTo(), insideEnclosedRegion);
         if (enclosurePush != null) {
             cancelEnclosedRegionTeleport(event, enclosurePush.direction());
             return;
         }
-        boolean insideEnclosedRegion = plugin.borderService().isEnclosedRegion(event.getFrom());
         if (!insideEnclosedRegion) {
-            BorderPush borderPush = plugin.borderService().borderPush(player, event.getTo());
+            BorderPush borderPush = plugin.borderService().borderPush(player, event.getTo(), false);
             if (borderPush != null) {
                 cancelBlockedTeleport(event, borderPush.direction());
                 return;
@@ -143,6 +145,14 @@ public final class PlayerStateListener implements Listener {
             }
         }
         renderNextTick(player);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPearlLanding(PlayerTeleportEvent event) {
+        if (!isEnderPearlTeleport(event) || !plugin.settings().pearlExtendsCombat()) {
+            return;
+        }
+        plugin.combatTags().refreshFromPearl(event.getPlayer());
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -235,6 +245,7 @@ public final class PlayerStateListener implements Listener {
         }
         plugin.combatTags().untag(player, CombatTagRemoveReason.QUIT, false);
         pearlCooldowns.remove(player.getUniqueId());
+        queuedBorderRenders.remove(player.getUniqueId());
         removeTrackedPearls(player.getUniqueId());
     }
 
@@ -260,6 +271,7 @@ public final class PlayerStateListener implements Listener {
 
     @EventHandler
     public void onCombatTagRemove(CombatTagRemoveEvent event) {
+        queuedBorderRenders.remove(event.getPlayer().getUniqueId());
         removeTrackedPearls(event.getPlayer().getUniqueId());
     }
 
@@ -269,6 +281,7 @@ public final class PlayerStateListener implements Listener {
 
     private void clearDeathTransientState(Player player) {
         pearlCooldowns.remove(player.getUniqueId());
+        queuedBorderRenders.remove(player.getUniqueId());
         removeTrackedPearls(player.getUniqueId());
     }
 
@@ -310,7 +323,12 @@ public final class PlayerStateListener implements Listener {
     }
 
     private void renderNextTick(Player player) {
+        UUID playerId = player.getUniqueId();
+        if (!queuedBorderRenders.add(playerId)) {
+            return;
+        }
         plugin.core().scheduler().runForPlayer(player, () -> {
+            queuedBorderRenders.remove(playerId);
             if (player.isOnline() && plugin.combatTags().isTagged(player)) {
                 plugin.borderService().render(player);
             }

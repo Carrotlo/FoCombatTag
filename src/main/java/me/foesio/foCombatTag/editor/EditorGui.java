@@ -3,6 +3,8 @@ package me.foesio.foCombatTag.editor;
 import me.foesio.core.dialog.DialogButton;
 import me.foesio.core.dialog.NativeDialogAvailability;
 import me.foesio.core.dialog.TextDialogRequest;
+import me.foesio.core.editor.CycleOption;
+import me.foesio.core.editor.CycleOptions;
 import me.foesio.core.editor.EditorDialogInputs;
 import me.foesio.core.editor.EditorItemFactory;
 import me.foesio.core.gui.EntryBrowserClick;
@@ -59,6 +61,14 @@ public final class EditorGui implements Listener {
     private static final int SIZE = 36;
     private static final int ROWS = SIZE / GuiSlots.ROW_SIZE;
     private static final int BACK_SLOT = GuiSlots.bottomMiddleSlot(ROWS);
+    private static final String VARIATION_SELECTOR_TEXT = "\uFE0E";
+    private static final String LEGACY_COLOR_FORMAT_BREAK = "\u200B";
+    private static final String VISIBLE_COLOR_RESTORE_TOKEN = "{white}";
+    private static final List<CycleOption> PEARL_COOLDOWN_OPTIONS = List.of(
+            new CycleOption(PearlCooldownMode.ALWAYS.configValue(), PearlCooldownMode.ALWAYS.displayName()),
+            new CycleOption(PearlCooldownMode.WHEN_TAGGED.configValue(), PearlCooldownMode.WHEN_TAGGED.displayName()),
+            new CycleOption(PearlCooldownMode.NEVER.configValue(), PearlCooldownMode.NEVER.displayName())
+    );
 
     private final FoCombatTag plugin;
     private final GuiButtonConfig buttons = GuiButtonConfig.defaults();
@@ -83,42 +93,42 @@ public final class EditorGui implements Listener {
                 "{white}Current: {theme}" + plugin.settings().combatDurationSeconds() + "s",
                 "{white}Click to edit."
         )));
-        inventory.setItem(11, item(Material.HOPPER, "{theme}Border Cache", List.of(
-                "{white}Current: {theme}" + plugin.settings().worldGuardBorderCacheSeconds() + "s",
-                "{white}Click to edit."
+        inventory.setItem(11, item(Material.IRON_BARS, "{theme}Combat Wall Settings", List.of(
+                "{white}Status: " + (plugin.settings().worldGuardBorderEnabled() ? "{good}Enabled" : "{bad}Disabled"),
+                "{white}Advanced visuals: " + (plugin.settings().worldGuardBorderAdvancedVisualsEnabled() ? "{good}Enabled" : "{bad}Disabled"),
+                "{white}Click to configure."
         )));
-        inventory.setItem(12, toggleItem(Material.RED_STAINED_GLASS, "Show WG Border", plugin.settings().worldGuardBorderEnabled()));
-        inventory.setItem(13, item(plugin.settings().worldGuardBorderCollisionMaterial(), "{theme}Border Block", List.of(
-                "{white}Current: {theme}" + plugin.settings().worldGuardBorderCollisionMaterial().name(),
-                "{white}Click to choose block.",
-                "{white}Used directly when advanced visuals are off."
-        )));
+        inventory.setItem(12, item(Material.END_CRYSTAL,
+                (plugin.settings().tagPlayerExplosions() ? "{good}" : "{bad}") + "Explosion Combat Tag", List.of(
+                        "{white}State: " + (plugin.settings().tagPlayerExplosions() ? "{good}Enabled" : "{bad}Disabled"),
+                        "{white}Player-caused explosions tag",
+                        "{white}affected players in combat.",
+                        "{white}Click to toggle."
+                )));
+        inventory.setItem(13, toggleItem(Material.ELYTRA, "Disable Elytra", plugin.settings().disableElytraWhileTagged()));
         inventory.setItem(14, toggleItem(Material.COMMAND_BLOCK, "Block Commands", plugin.settings().blockCommandsWhileTagged()));
         inventory.setItem(15, item(Material.WRITABLE_BOOK, "{theme}Allowed Commands", List.of(
                 "{white}Entries: {theme}" + configuredAllowedCommands().size(),
                 "{white}Click to browse."
         )));
-        inventory.setItem(16, item(Material.TINTED_GLASS, "{theme}Border Visuals", List.of(
-                "{white}Advanced: " + (plugin.settings().worldGuardBorderAdvancedVisualsEnabled() ? "{good}Enabled" : "{bad}Disabled"),
-                "{white}Click to edit all border visual options."
-        )));
-        inventory.setItem(19, item(Material.PISTON, "{theme}Pushback Multiplier", List.of(
-                "{white}Current: {theme}" + NumberFormatters.money(plugin.settings().worldGuardBorderPushbackMultiplier()) + "x",
-                "{white}Click to edit."
-        )));
-        inventory.setItem(20, toggleItem(Material.SKELETON_SKULL, "Kill On Logout", plugin.settings().killOnLogout()));
-        inventory.setItem(21, item(Material.ENDER_EYE, "{theme}Enclosed Regions", List.of(
+        inventory.setItem(16, toggleItem(Material.SKELETON_SKULL, "Kill On Logout", plugin.settings().killOnLogout()));
+        inventory.setItem(19, item(Material.ENDER_EYE, "{theme}Enclosed Regions", List.of(
                 "{white}Selected: {theme}" + plugin.settings().enclosedWorldGuardRegions().size(),
                 "{white}State: " + (plugin.settings().hasEnclosedWorldGuardRegions() ? "{good}Enabled" : "{bad}Disabled"),
                 "{white}Click to select WorldGuard regions."
         )));
-        inventory.setItem(22, toggleItem(Material.ELYTRA, "Disable Elytra", plugin.settings().disableElytraWhileTagged()));
-        inventory.setItem(23, pearlCooldownModeItem());
-        inventory.setItem(24, item(Material.CLOCK, "{theme}Pearl Cooldown Timer", List.of(
+        inventory.setItem(20, pearlCooldownModeItem());
+        inventory.setItem(21, item(Material.CLOCK, "{theme}Pearl Cooldown Timer", List.of(
                 "{white}Current: {theme}" + plugin.settings().pearlCooldownSeconds() + "s",
                 "{white}Click to edit."
         )));
-        inventory.setItem(25, toggleItem(Material.END_CRYSTAL, "Player Explosions", plugin.settings().tagPlayerExplosions()));
+        inventory.setItem(22, item(Material.ENDER_PEARL,
+                (plugin.settings().pearlExtendsCombat() ? "{good}" : "{bad}") + "Pearls Extend Combat", List.of(
+                        "{white}State: " + (plugin.settings().pearlExtendsCombat() ? "{good}Enabled" : "{bad}Disabled"),
+                        "{white}A pearl landing while tagged",
+                        "{white}resets the combat timer.",
+                        "{white}Click to toggle."
+                )));
         player.openInventory(inventory);
     }
 
@@ -161,47 +171,48 @@ public final class EditorGui implements Listener {
         EntryBrowserMenus.open(player, request);
     }
 
-    private void openBorderVisuals(Player player) {
-        EditorHolder holder = new EditorHolder(View.BORDER_VISUALS, 0);
-        Inventory inventory = Bukkit.createInventory(holder, SIZE, GuiTitles.format("Border Visuals"));
+    private void openCombatWallSettings(Player player) {
+        EditorHolder holder = new EditorHolder(View.COMBAT_WALL_SETTINGS, 0);
+        Inventory inventory = Bukkit.createInventory(holder, SIZE, GuiTitles.format("Combat Wall Settings"));
         holder.setInventory(inventory);
         fill(inventory);
 
-        inventory.setItem(10, toggleItem(Material.TINTED_GLASS, "Advanced Visuals", plugin.settings().worldGuardBorderAdvancedVisualsEnabled()));
-        inventory.setItem(11, item(plugin.settings().worldGuardBorderCollisionMaterial(), "{theme}Border Block", List.of(
+        inventory.setItem(10, toggleItem(Material.IRON_BARS, "Show Combat Wall", plugin.settings().worldGuardBorderEnabled()));
+        inventory.setItem(11, item(plugin.settings().worldGuardBorderCollisionMaterial(), "{theme}Combat Wall Block", List.of(
                 "{white}Current: {theme}" + plugin.settings().worldGuardBorderCollisionMaterial().name(),
                 "{white}Click to choose block."
         )));
-        inventory.setItem(12, item(Material.RED_DYE, "{theme}Visual Color", List.of(
+        inventory.setItem(12, toggleItem(Material.TINTED_GLASS, "Advanced Visuals", plugin.settings().worldGuardBorderAdvancedVisualsEnabled()));
+        inventory.setItem(13, item(Material.RED_DYE, "{theme}Visual Color", List.of(
                 "{white}Current: {theme}" + visibleColorValue(),
                 "{white}Click to edit."
         )));
-        inventory.setItem(13, item(Material.SPYGLASS, "{theme}Visual Range", List.of(
+        inventory.setItem(14, item(Material.SPYGLASS, "{theme}Visual Range", List.of(
                 "{white}Current: {theme}" + plugin.settings().worldGuardBorderVisualRange(),
                 "{white}Click to edit."
         )));
-        inventory.setItem(14, item(Material.COMPASS, "{theme}Scan Radius", List.of(
+        inventory.setItem(15, item(Material.COMPASS, "{theme}Scan Radius", List.of(
                 "{white}Current: {theme}" + plugin.settings().worldGuardBorderRadius(),
                 "{white}Click to edit."
         )));
-        inventory.setItem(15, item(Material.SCAFFOLDING, "{theme}Border Height", List.of(
+        inventory.setItem(16, item(Material.SCAFFOLDING, "{theme}Combat Wall Height", List.of(
                 "{white}Current: {theme}" + plugin.settings().worldGuardBorderHeight(),
                 "{white}Click to edit."
         )));
-        inventory.setItem(16, toggleItem(Material.FEATHER, "Empty Blocks Only", plugin.settings().worldGuardBorderOnlyAir()));
-        inventory.setItem(19, item(Material.HOPPER, "{theme}Border Cache", List.of(
+        inventory.setItem(19, toggleItem(Material.FEATHER, "Empty Blocks Only", plugin.settings().worldGuardBorderOnlyAir()));
+        inventory.setItem(20, item(Material.HOPPER, "{theme}Combat Wall Cache", List.of(
                 "{white}Current: {theme}" + plugin.settings().worldGuardBorderCacheSeconds() + "s",
                 "{white}Click to edit."
         )));
-        inventory.setItem(20, item(Material.PISTON, "{theme}Pushback Multiplier", List.of(
+        inventory.setItem(21, item(Material.PISTON, "{theme}Pushback Multiplier", List.of(
                 "{white}Current: {theme}" + NumberFormatters.money(plugin.settings().worldGuardBorderPushbackMultiplier()) + "x",
                 "{white}Click to edit."
         )));
-        inventory.setItem(21, item(Material.ENDER_PEARL, "{theme}Pearl Impact Radius", List.of(
+        inventory.setItem(22, item(Material.ENDER_PEARL, "{theme}Pearl Impact Radius", List.of(
                 "{white}Current: {theme}" + plugin.settings().worldGuardBorderPearlImpactRadius(),
                 "{white}Click to edit."
         )));
-        inventory.setItem(22, item(Material.CLOCK, "{theme}Pearl Impact Duration", List.of(
+        inventory.setItem(23, item(Material.CLOCK, "{theme}Pearl Impact Duration", List.of(
                 "{white}Current: {theme}" + plugin.settings().worldGuardBorderPearlImpactDurationTicks() + " ticks",
                 "{white}Click to edit."
         )));
@@ -255,7 +266,7 @@ public final class EditorGui implements Listener {
         if (holder.view() == View.MAIN) {
             handleMainClick(player, rawSlot);
         } else {
-            handleBorderVisualsClick(player, rawSlot);
+            handleCombatWallSettingsClick(player, rawSlot);
         }
     }
 
@@ -318,43 +329,42 @@ public final class EditorGui implements Listener {
     private void handleMainClick(Player player, int slot) {
         switch (slot) {
             case 10 -> startNumberPrompt(player, PromptType.DURATION);
-            case 11 -> startNumberPrompt(player, PromptType.BORDER_CACHE, View.MAIN);
-            case 12 -> toggle(player, "worldguard.border.enabled", "WorldGuard border");
-            case 13 -> openBorderMaterialChooser(player, View.MAIN);
+            case 11 -> openCombatWallSettings(player);
+            case 12 -> toggle(player, "combat.tag-player-explosions", "Explosion combat tag");
+            case 13 -> toggle(player, "combat.disable-elytra-while-tagged", "Disable elytra");
             case 14 -> toggle(player, "commands.block-while-tagged", "Command blocking");
             case 15 -> openCommands(player, 0);
-            case 16 -> openBorderVisuals(player);
-            case 19 -> startNumberPrompt(player, PromptType.PUSHBACK_MULTIPLIER, View.MAIN);
-            case 20 -> toggle(player, "combat.kill-on-logout", "Kill on logout");
-            case 21 -> openEnclosedRegions(player, 0);
-            case 22 -> toggle(player, "combat.disable-elytra-while-tagged", "Disable elytra");
-            case 23 -> cyclePearlCooldownMode(player);
-            case 24 -> startNumberPrompt(player, PromptType.PEARL_COOLDOWN);
-            case 25 -> toggle(player, "combat.tag-player-explosions", "Player explosions");
+            case 16 -> toggle(player, "combat.kill-on-logout", "Kill on logout");
+            case 19 -> openEnclosedRegions(player, 0);
+            case 20 -> cyclePearlCooldownMode(player);
+            case 21 -> startNumberPrompt(player, PromptType.PEARL_COOLDOWN);
+            case 22 -> toggle(player, "combat.pearl-extends-combat", "Pearl combat extension");
             default -> {
             }
         }
     }
 
-    private void handleBorderVisualsClick(Player player, int slot) {
+    private void handleCombatWallSettingsClick(Player player, int slot) {
         if (slot == BACK_SLOT) {
             openMain(player);
             return;
         }
         switch (slot) {
-            case 10 -> save(player, "worldguard.border.advanced-visuals-enabled", !plugin.settings().worldGuardBorderAdvancedVisualsEnabled(),
-                    "Advanced visuals", !plugin.settings().worldGuardBorderAdvancedVisualsEnabled() ? "enabled" : "disabled", View.BORDER_VISUALS);
-            case 11 -> openBorderMaterialChooser(player, View.BORDER_VISUALS);
-            case 12 -> startTextPrompt(player, PromptType.BORDER_VISUAL_COLOR);
-            case 13 -> startNumberPrompt(player, PromptType.BORDER_VISUAL_RANGE);
-            case 14 -> startNumberPrompt(player, PromptType.BORDER_RADIUS);
-            case 15 -> startNumberPrompt(player, PromptType.BORDER_HEIGHT);
-            case 16 -> save(player, "worldguard.border.only-air", !plugin.settings().worldGuardBorderOnlyAir(),
-                    "Empty blocks only", !plugin.settings().worldGuardBorderOnlyAir() ? "enabled" : "disabled", View.BORDER_VISUALS);
-            case 19 -> startNumberPrompt(player, PromptType.BORDER_CACHE);
-            case 20 -> startNumberPrompt(player, PromptType.PUSHBACK_MULTIPLIER);
-            case 21 -> startNumberPrompt(player, PromptType.PEARL_IMPACT_RADIUS);
-            case 22 -> startNumberPrompt(player, PromptType.PEARL_IMPACT_DURATION);
+            case 10 -> save(player, "worldguard.border.enabled", !plugin.settings().worldGuardBorderEnabled(),
+                    "Combat wall", !plugin.settings().worldGuardBorderEnabled() ? "enabled" : "disabled", View.COMBAT_WALL_SETTINGS);
+            case 11 -> openBorderMaterialChooser(player, View.COMBAT_WALL_SETTINGS);
+            case 12 -> save(player, "worldguard.border.advanced-visuals-enabled", !plugin.settings().worldGuardBorderAdvancedVisualsEnabled(),
+                    "Advanced visuals", !plugin.settings().worldGuardBorderAdvancedVisualsEnabled() ? "enabled" : "disabled", View.COMBAT_WALL_SETTINGS);
+            case 13 -> startTextPrompt(player, PromptType.BORDER_VISUAL_COLOR);
+            case 14 -> startNumberPrompt(player, PromptType.BORDER_VISUAL_RANGE);
+            case 15 -> startNumberPrompt(player, PromptType.BORDER_RADIUS);
+            case 16 -> startNumberPrompt(player, PromptType.BORDER_HEIGHT);
+            case 19 -> save(player, "worldguard.border.only-air", !plugin.settings().worldGuardBorderOnlyAir(),
+                    "Empty blocks only", !plugin.settings().worldGuardBorderOnlyAir() ? "enabled" : "disabled", View.COMBAT_WALL_SETTINGS);
+            case 20 -> startNumberPrompt(player, PromptType.BORDER_CACHE);
+            case 21 -> startNumberPrompt(player, PromptType.PUSHBACK_MULTIPLIER);
+            case 22 -> startNumberPrompt(player, PromptType.PEARL_IMPACT_RADIUS);
+            case 23 -> startNumberPrompt(player, PromptType.PEARL_IMPACT_DURATION);
             default -> {
             }
         }
@@ -489,11 +499,11 @@ public final class EditorGui implements Listener {
 
     private void saveText(Player player, Prompt prompt, String input) {
         PromptType type = prompt.type();
-        String value = input.trim();
+        String value = stripColorFormatBreak(input).trim();
         if (type == PromptType.BORDER_VISUAL_COLOR) {
             if (!isValidColorValue(value)) {
                 plugin.messages().send(player, "editor-save-failed", Map.of("{error}", "Use #RRGGBB or a supported color name"));
-                openBorderVisuals(player);
+                openCombatWallSettings(player);
                 return;
             }
             save(player, type.path(), normalizeColorValue(value), type.setting(), normalizeColorValue(value), prompt.reopenView());
@@ -570,7 +580,16 @@ public final class EditorGui implements Listener {
     }
 
     private void cyclePearlCooldownMode(Player player) {
-        PearlCooldownMode next = plugin.settings().pearlCooldownMode().next();
+        String nextValue = CycleOptions.nextValue(
+                plugin.settings().pearlCooldownMode().configValue(),
+                PEARL_COOLDOWN_OPTIONS
+        );
+        PearlCooldownMode next = PearlCooldownMode.fromConfig(nextValue);
+        if (next == null) {
+            plugin.messages().send(player, "editor-save-failed", Map.of("{error}", "Invalid pearl cooldown option"));
+            openMain(player);
+            return;
+        }
         try {
             FileConfiguration config = plugin.getConfig();
             config.set("combat.pearl-cooldown.mode", next.configValue());
@@ -591,8 +610,8 @@ public final class EditorGui implements Listener {
     private void reopenPromptPage(Player player, Prompt prompt) {
         if (prompt.type() == PromptType.ADD_COMMAND) {
             openCommands(player, 0);
-        } else if (prompt.reopenView() == View.BORDER_VISUALS) {
-            openBorderVisuals(player);
+        } else if (prompt.reopenView() == View.COMBAT_WALL_SETTINGS) {
+            openCombatWallSettings(player);
         } else if (prompt.reopenView() == View.ENCLOSED_REGIONS) {
             openEnclosedRegions(player, 0);
         } else {
@@ -605,14 +624,14 @@ public final class EditorGui implements Listener {
     }
 
     private void openBorderMaterialChooser(Player player, View returnView, int page, String filter) {
-        materialChooserReturnViews.put(player.getUniqueId(), returnView == null ? View.BORDER_VISUALS : returnView);
+        materialChooserReturnViews.put(player.getUniqueId(), returnView == null ? View.COMBAT_WALL_SETTINGS : returnView);
         MaterialChooserMenus.open(player, borderMaterialRequest(page, filter));
     }
 
     private MaterialChooserRequest borderMaterialRequest(int page, String filter) {
         Material current = plugin.settings().worldGuardBorderCollisionMaterial();
         return MaterialChooserRequest.builder()
-                .title("Border Block")
+                .title("Combat Wall Block")
                 .mode(MaterialChooserMode.SINGLE_SELECT)
                 .availableMaterials(MaterialTypes.allBlocks())
                 .selectedMaterials(Set.of(current))
@@ -655,7 +674,7 @@ public final class EditorGui implements Listener {
 
     private void openMaterialReturnView(Player player) {
         View returnView = materialChooserReturnViews.remove(player.getUniqueId());
-        openView(player, returnView == null ? View.BORDER_VISUALS : returnView);
+        openView(player, returnView == null ? View.COMBAT_WALL_SETTINGS : returnView);
     }
 
     private void saveBorderMaterialChoice(Player player, Material material) {
@@ -665,12 +684,12 @@ public final class EditorGui implements Listener {
             return;
         }
         View returnView = materialChooserReturnViews.remove(player.getUniqueId());
-        save(player, "worldguard.border.collision-material", material.name(), "Border block", material.name(),
-                returnView == null ? View.BORDER_VISUALS : returnView);
+        save(player, "worldguard.border.collision-material", material.name(), "Combat wall block", material.name(),
+                returnView == null ? View.COMBAT_WALL_SETTINGS : returnView);
     }
 
     private void startMaterialSearchPrompt(Player player, String currentFilter) {
-        View returnView = materialChooserReturnViews.getOrDefault(player.getUniqueId(), View.BORDER_VISUALS);
+        View returnView = materialChooserReturnViews.getOrDefault(player.getUniqueId(), View.COMBAT_WALL_SETTINGS);
         TextDialogRequest request = new TextDialogRequest(
                 "Search",
                 List.of("Enter a block material search term."),
@@ -693,8 +712,8 @@ public final class EditorGui implements Listener {
     }
 
     private void openView(Player player, View view) {
-        if (view == View.BORDER_VISUALS) {
-            openBorderVisuals(player);
+        if (view == View.COMBAT_WALL_SETTINGS) {
+            openCombatWallSettings(player);
         } else if (view == View.COMMANDS) {
             openCommands(player, 0);
         } else {
@@ -830,15 +849,12 @@ public final class EditorGui implements Listener {
     }
 
     private ItemStack pearlCooldownModeItem() {
-        PearlCooldownMode current = plugin.settings().pearlCooldownMode();
-        List<String> lore = new ArrayList<>();
-        lore.add("{white}Current: {theme}" + current.displayName());
-        lore.add("{white}Options:");
-        for (PearlCooldownMode mode : PearlCooldownMode.values()) {
-            lore.add((mode == current ? "{theme}" : "{white}") + "- " + mode.displayName());
-        }
-        lore.add("{white}Click to cycle.");
-        return item(Material.ENDER_PEARL, "{theme}Pearl Cooldown", lore);
+        return EditorItemFactory.cycle(
+                plugin.messages(),
+                "Pearl Cooldown",
+                plugin.settings().pearlCooldownMode().configValue(),
+                PEARL_COOLDOWN_OPTIONS
+        );
     }
 
     private ItemStack item(Material material, String name, List<String> lore) {
@@ -877,7 +893,7 @@ public final class EditorGui implements Listener {
     }
 
     private String visibleColorValue() {
-        return "#" + colorValue();
+        return displayColorLiteral(colorValue());
     }
 
     private String currentTextMessageValue(PromptType promptType) {
@@ -998,25 +1014,39 @@ public final class EditorGui implements Listener {
         };
     }
 
+    private static String displayColorLiteral(String value) {
+        if (value == null || !value.startsWith("#")) {
+            return value == null ? "" : value;
+        }
+        String hex = value.substring(1);
+        return "##" + hex + VISIBLE_COLOR_RESTORE_TOKEN + hex;
+    }
+
+    private static String stripColorFormatBreak(String value) {
+        return value == null ? "" : value
+                .replace(VARIATION_SELECTOR_TEXT, "")
+                .replace(LEGACY_COLOR_FORMAT_BREAK, "");
+    }
+
     private enum View {
         MAIN,
         COMMANDS,
-        BORDER_VISUALS,
+        COMBAT_WALL_SETTINGS,
         ENCLOSED_REGIONS
     }
 
     private enum PromptType {
         ADD_COMMAND("Allowed command", "", 0.0D, 0.0D, "", InputKind.COMMAND, View.COMMANDS, ""),
         DURATION("Combat timer", "combat.duration-seconds", 1.0D, 3600.0D, "s", InputKind.INTEGER, View.MAIN, ""),
-        BORDER_CACHE("Border cache", "worldguard.border.cache-seconds", 0.0D, 60.0D, "s", InputKind.INTEGER, View.BORDER_VISUALS, ""),
-        PUSHBACK_MULTIPLIER("Pushback multiplier", "worldguard.border.pushback-multiplier", 0.0D, 3.0D, "x", InputKind.DECIMAL, View.BORDER_VISUALS, ""),
+        BORDER_CACHE("Combat wall cache", "worldguard.border.cache-seconds", 0.0D, 60.0D, "s", InputKind.INTEGER, View.COMBAT_WALL_SETTINGS, ""),
+        PUSHBACK_MULTIPLIER("Pushback multiplier", "worldguard.border.pushback-multiplier", 0.0D, 3.0D, "x", InputKind.DECIMAL, View.COMBAT_WALL_SETTINGS, ""),
         PEARL_COOLDOWN("Pearl cooldown", "combat.pearl-cooldown.seconds", 1.0D, 3600.0D, "s", InputKind.INTEGER, View.MAIN, ""),
-        BORDER_VISUAL_COLOR("Visual color", "worldguard.border.visual-color", 0.0D, 0.0D, "", InputKind.COLOR, View.BORDER_VISUALS, "Use #RRGGBB or names like red, blue, green, yellow, purple."),
-        BORDER_VISUAL_RANGE("Visual range", "worldguard.border.visual-range", 1.0D, 16.0D, "", InputKind.INTEGER, View.BORDER_VISUALS, ""),
-        BORDER_RADIUS("Scan radius", "worldguard.border.radius", 2.0D, 16.0D, "", InputKind.INTEGER, View.BORDER_VISUALS, ""),
-        BORDER_HEIGHT("Border height", "worldguard.border.height", 1.0D, 12.0D, "", InputKind.INTEGER, View.BORDER_VISUALS, ""),
-        PEARL_IMPACT_RADIUS("Pearl impact radius", "worldguard.border.pearl-impact.radius", 1.0D, 8.0D, "", InputKind.INTEGER, View.BORDER_VISUALS, ""),
-        PEARL_IMPACT_DURATION("Pearl impact duration", "worldguard.border.pearl-impact.duration-ticks", 1.0D, 100.0D, " ticks", InputKind.INTEGER, View.BORDER_VISUALS, "");
+        BORDER_VISUAL_COLOR("Visual color", "worldguard.border.visual-color", 0.0D, 0.0D, "", InputKind.COLOR, View.COMBAT_WALL_SETTINGS, "Use #RRGGBB or names like red, blue, green, yellow, purple."),
+        BORDER_VISUAL_RANGE("Visual range", "worldguard.border.visual-range", 1.0D, 16.0D, "", InputKind.INTEGER, View.COMBAT_WALL_SETTINGS, ""),
+        BORDER_RADIUS("Scan radius", "worldguard.border.radius", 2.0D, 16.0D, "", InputKind.INTEGER, View.COMBAT_WALL_SETTINGS, ""),
+        BORDER_HEIGHT("Combat wall height", "worldguard.border.height", 1.0D, 12.0D, "", InputKind.INTEGER, View.COMBAT_WALL_SETTINGS, ""),
+        PEARL_IMPACT_RADIUS("Pearl impact radius", "worldguard.border.pearl-impact.radius", 1.0D, 8.0D, "", InputKind.INTEGER, View.COMBAT_WALL_SETTINGS, ""),
+        PEARL_IMPACT_DURATION("Pearl impact duration", "worldguard.border.pearl-impact.duration-ticks", 1.0D, 100.0D, " ticks", InputKind.INTEGER, View.COMBAT_WALL_SETTINGS, "");
 
         private final String setting;
         private final String path;

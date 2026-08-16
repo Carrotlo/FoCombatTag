@@ -96,6 +96,13 @@ public final class CombatTagService {
         return tag(player, null, sourceName == null || sourceName.isBlank() ? "API" : sourceName, CombatTagCause.API, durationSeconds);
     }
 
+    public boolean refreshFromPearl(Player player) {
+        if (!plugin.settings().pearlExtendsCombat() || !isTagged(player)) {
+            return false;
+        }
+        return tag(player, null, "Ender Pearl", CombatTagCause.PEARL, plugin.settings().combatDurationSeconds());
+    }
+
     public int tagAll(Collection<? extends Player> players) {
         int count = 0;
         for (Player player : players) {

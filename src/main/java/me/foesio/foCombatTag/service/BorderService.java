@@ -63,6 +63,7 @@ public final class BorderService {
     private final Map<UUID, Map<BorderVisualKey, BorderVisualDisplay>> visualDisplays = new ConcurrentHashMap<>();
     private final Set<TextDisplay> temporaryVisualDisplays = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Map<BorderScanKey, BorderScan>> scanCache = new ConcurrentHashMap<>();
+    private final Map<UUID, Map<BorderScanFamilyKey, BorderScan>> latestScanCache = new ConcurrentHashMap<>();
     private final Map<BlockKey, CachedFlag> noPvpCache = new ConcurrentHashMap<>();
     private final Map<BlockKey, CachedFlag> enclosedRegionCache = new ConcurrentHashMap<>();
     private final Map<BlockKey, CachedEscape> noPvpEscapeCache = new ConcurrentHashMap<>();
@@ -78,6 +79,7 @@ public final class BorderService {
 
     public void reload() {
         scanCache.clear();
+        latestScanCache.clear();
         noPvpCache.clear();
         enclosedRegionCache.clear();
         noPvpEscapeCache.clear();
@@ -154,6 +156,7 @@ public final class BorderService {
         Set<BlockKey> previous = sentBlocks.remove(playerId);
         nextBlockRefreshAtMillis.remove(playerId);
         scanCache.remove(playerId);
+        latestScanCache.remove(playerId);
         pushbackCooldowns.remove(playerId);
         removeVisualDisplays(playerId);
         if (previous == null) {
@@ -183,11 +186,16 @@ public final class BorderService {
         }
         temporaryVisualDisplays.clear();
         scanCache.clear();
+        latestScanCache.clear();
         enclosedRegionCache.clear();
         noPvpEscapeCache.clear();
     }
 
     public BorderPush borderPush(Player player, Location location) {
+        return borderPush(player, location, usesEnclosedGuard(player));
+    }
+
+    public BorderPush borderPush(Player player, Location location, boolean insideEnclosedRegion) {
         if (player == null || location == null || location.getWorld() == null) {
             return null;
         }
@@ -195,7 +203,7 @@ public final class BorderService {
         if (!settings.worldGuardChecksEnabled() || !hasAnyRegionGuard(settings) || !worldGuardHook.isAvailable()) {
             return null;
         }
-        if (usesEnclosedGuard(player)) {
+        if (insideEnclosedRegion) {
             return null;
         }
         Vector direction = null;
@@ -204,7 +212,7 @@ public final class BorderService {
         long now = System.currentTimeMillis();
         long ttlMillis = settings.worldGuardBorderCacheSeconds() * 1000L;
 
-        for (Map.Entry<BlockKey, GuardMode> entry : collectPushGuardBlocks(player, location).entrySet()) {
+        for (Map.Entry<BlockKey, GuardMode> entry : collectPushGuardBlocks(player, location, false).entrySet()) {
             BlockKey key = entry.getKey();
             if (!overlaps(location.getY(), location.getY() + PLAYER_HEIGHT, key.y(), key.y() + 1.0D)) {
                 continue;
@@ -233,17 +241,25 @@ public final class BorderService {
     }
 
     public boolean shouldCheckBorderPush(Player player, Location location) {
+        return shouldCheckBorderPush(player, location, usesEnclosedGuard(player));
+    }
+
+    public boolean shouldCheckBorderPush(Player player, Location location, boolean insideEnclosedRegion) {
         if (player == null || location == null || location.getWorld() == null) {
             return true;
         }
-        if (usesEnclosedGuard(player)) {
+        if (insideEnclosedRegion) {
             return false;
         }
-        Set<BlockKey> cachedBlocks = cachedGuardBlocks(player, location, false);
+        Set<BlockKey> cachedBlocks = cachedGuardBlocks(player, location, false, false);
         return cachedBlocks == null || hasNearbyPushCandidate(location, cachedBlocks);
     }
 
     public BorderPush enclosedRegionEscapePush(Location from, Location to) {
+        return enclosedRegionEscapePush(from, to, isEnclosedRegion(from));
+    }
+
+    public BorderPush enclosedRegionEscapePush(Location from, Location to, boolean fromInsideEnclosedRegion) {
         if (from == null || to == null || from.getWorld() == null || to.getWorld() == null) {
             return null;
         }
@@ -254,7 +270,7 @@ public final class BorderService {
                 || !settings.isWorldEnabled(from.getWorld())) {
             return null;
         }
-        if (!isEnclosedRegion(from)) {
+        if (!fromInsideEnclosedRegion) {
             return null;
         }
         if (!from.getWorld().equals(to.getWorld())) {
@@ -328,13 +344,17 @@ public final class BorderService {
         if (!settings.worldGuardChecksEnabled() || !worldGuardHook.isAvailable() || to == null || to.getWorld() == null) {
             return false;
         }
-        if (enforceEnclosedRegions && from != null && from.getWorld() != null && isEnclosedRegion(from)) {
-            return enclosedRegionEscapePush(from, to) != null;
+        boolean fromInsideEnclosedRegion = enforceEnclosedRegions
+                && from != null
+                && from.getWorld() != null
+                && isEnclosedRegion(from);
+        if (fromInsideEnclosedRegion) {
+            return enclosedRegionEscapePush(from, to, true) != null;
         }
         if (settings.worldGuardBorderEnabled() && isNoPvp(to)) {
             return true;
         }
-        return enforceEnclosedRegions && enclosedRegionEscapePush(from, to) != null;
+        return false;
     }
 
     public BorderPush noPvpEscapePush(Location location) {
@@ -507,10 +527,10 @@ public final class BorderService {
         return result;
     }
 
-    private Map<BlockKey, GuardMode> collectPushGuardBlocks(Player player, Location base) {
+    private Map<BlockKey, GuardMode> collectPushGuardBlocks(Player player, Location base, boolean insideEnclosedRegion) {
         Map<BlockKey, GuardMode> result = new HashMap<>();
         Settings settings = plugin.settings();
-        if (usesEnclosedGuard(player)) {
+        if (insideEnclosedRegion) {
             return result;
         }
         if (settings.worldGuardBorderEnabled()) {
@@ -543,9 +563,10 @@ public final class BorderService {
         BorderScanKey scanKey = borderScanKey(base, radius, height, onlyAir, mode);
         long now = System.currentTimeMillis();
         long ttlMillis = plugin.settings().worldGuardBorderCacheSeconds() * 1000L;
+        UUID playerId = player.getUniqueId();
         Map<BorderScanKey, BorderScan> playerScans = null;
         if (ttlMillis > 0L) {
-            playerScans = scanCache.computeIfAbsent(player.getUniqueId(), ignored -> new ConcurrentHashMap<>());
+            playerScans = scanCache.computeIfAbsent(playerId, ignored -> new ConcurrentHashMap<>());
             BorderScan cached = cachedScan(playerScans, scanKey, now);
             if (cached != null) {
                 return cached.blocks();
@@ -554,33 +575,22 @@ public final class BorderService {
                 BorderScan fullScan = cachedScan(playerScans, borderScanKey(base, radius, height, false, mode), now);
                 if (fullScan != null) {
                     Set<BlockKey> filtered = airBlocks(base.getWorld(), fullScan.blocks());
-                    cacheScan(playerScans, scanKey, filtered, now, fullScan.expiresAtMillis(), false);
+                    cacheScan(playerId, playerScans, scanKey, filtered, now, fullScan.expiresAtMillis(), false);
                     return filtered;
                 }
+            }
+            BorderScan sliding = slideLatestScan(playerId, playerScans, scanKey, base.getWorld(), now, ttlMillis);
+            if (sliding != null) {
+                return sliding.blocks();
             }
         }
 
         Set<BlockKey> result = new HashSet<>();
         World world = base.getWorld();
-        int minY = Math.max(world.getMinHeight(), base.getBlockY() - height);
-        int maxY = Math.min(world.getMaxHeight() - 1, base.getBlockY() + height);
-
-        for (int x = base.getBlockX() - radius; x <= base.getBlockX() + radius; x++) {
-            for (int y = minY; y <= maxY; y++) {
-                for (int z = base.getBlockZ() - radius; z <= base.getBlockZ() + radius; z++) {
-                    Location location = new Location(world, x, y, z);
-                    if (onlyAir && !location.getBlock().getType().isAir()) {
-                        continue;
-                    }
-                    if (isBorderBlock(location, mode, now, ttlMillis)) {
-                        result.add(BlockKey.from(location));
-                    }
-                }
-            }
-        }
+        scanBorderCells(world, scanVolume(world, scanKey), onlyAir, mode, now, ttlMillis, result);
         Set<BlockKey> snapshot = Set.copyOf(result);
         if (ttlMillis > 0L && playerScans != null) {
-            cacheScan(playerScans, scanKey, snapshot, now, now + ttlMillis, true);
+            cacheScan(playerId, playerScans, scanKey, snapshot, now, now + ttlMillis, true);
         }
         return snapshot;
     }
@@ -597,13 +607,17 @@ public final class BorderService {
         return cached;
     }
 
-    private void cacheScan(Map<BorderScanKey, BorderScan> playerScans, BorderScanKey scanKey, Set<BlockKey> blocks,
-                           long now, long expiresAtMillis, boolean cleanupGlobalCaches) {
+    private BorderScan cacheScan(UUID playerId, Map<BorderScanKey, BorderScan> playerScans, BorderScanKey scanKey,
+                                 Set<BlockKey> blocks, long now, long expiresAtMillis, boolean cleanupGlobalCaches) {
         cleanupScanCache(playerScans, now);
-        playerScans.put(scanKey, new BorderScan(scanKey, blocks, expiresAtMillis));
+        BorderScan scan = new BorderScan(scanKey, blocks, expiresAtMillis);
+        playerScans.put(scanKey, scan);
+        latestScanCache.computeIfAbsent(playerId, ignored -> new ConcurrentHashMap<>())
+                .put(BorderScanFamilyKey.from(scanKey), scan);
         if (cleanupGlobalCaches) {
             cleanupNoPvpCache(now);
         }
+        return scan;
     }
 
     private Set<BlockKey> airBlocks(World world, Set<BlockKey> blocks) {
@@ -623,7 +637,7 @@ public final class BorderService {
         return Set.copyOf(result);
     }
 
-    private Set<BlockKey> cachedGuardBlocks(Player player, Location base, boolean onlyAir) {
+    private Set<BlockKey> cachedGuardBlocks(Player player, Location base, boolean onlyAir, boolean insideEnclosedRegion) {
         long ttlMillis = plugin.settings().worldGuardBorderCacheSeconds() * 1000L;
         if (ttlMillis <= 0L) {
             return null;
@@ -635,14 +649,15 @@ public final class BorderService {
         long now = System.currentTimeMillis();
         Set<BlockKey> result = new HashSet<>();
         Settings settings = plugin.settings();
-        if (usesEnclosedGuard(player)) {
-            BorderScan cached = cachedScan(playerScans, borderScanKey(
+        UUID playerId = player.getUniqueId();
+        if (insideEnclosedRegion) {
+            BorderScan cached = cachedOrSlidingScan(playerId, playerScans, borderScanKey(
                     base,
                     settings.worldGuardBorderRadius(),
                     settings.worldGuardBorderHeight(),
                     onlyAir,
                     GuardMode.ENCLOSED_REGION
-            ), now);
+            ), base.getWorld(), now, ttlMillis);
             if (cached == null) {
                 return null;
             }
@@ -650,19 +665,155 @@ public final class BorderService {
             return result;
         }
         if (settings.worldGuardBorderEnabled()) {
-            BorderScan cached = cachedScan(playerScans, borderScanKey(
+            BorderScan cached = cachedOrSlidingScan(playerId, playerScans, borderScanKey(
                     base,
                     settings.worldGuardBorderRadius(),
                     settings.worldGuardBorderHeight(),
                     onlyAir,
                     GuardMode.NO_PVP
-            ), now);
+            ), base.getWorld(), now, ttlMillis);
             if (cached == null) {
                 return null;
             }
             result.addAll(cached.blocks());
         }
         return result;
+    }
+
+    private BorderScan cachedOrSlidingScan(UUID playerId, Map<BorderScanKey, BorderScan> playerScans,
+                                            BorderScanKey scanKey, World world, long now, long ttlMillis) {
+        BorderScan cached = cachedScan(playerScans, scanKey, now);
+        return cached != null ? cached : slideLatestScan(playerId, playerScans, scanKey, world, now, ttlMillis);
+    }
+
+    private BorderScan slideLatestScan(UUID playerId, Map<BorderScanKey, BorderScan> playerScans,
+                                       BorderScanKey scanKey, World world, long now, long ttlMillis) {
+        Map<BorderScanFamilyKey, BorderScan> latestScans = latestScanCache.get(playerId);
+        if (latestScans == null) {
+            return null;
+        }
+        BorderScan previous = latestScans.get(BorderScanFamilyKey.from(scanKey));
+        if (previous == null) {
+            return null;
+        }
+        if (previous.expiresAtMillis() <= now) {
+            latestScans.remove(BorderScanFamilyKey.from(scanKey), previous);
+            return null;
+        }
+        if (!canSlide(previous.key(), scanKey)) {
+            return null;
+        }
+        if (previous.key().equals(scanKey)) {
+            return cacheScan(playerId, playerScans, scanKey, previous.blocks(), now, previous.expiresAtMillis(), false);
+        }
+
+        ScanVolume previousVolume = scanVolume(world, previous.key());
+        ScanVolume targetVolume = scanVolume(world, scanKey);
+        Set<BlockKey> blocks = new HashSet<>();
+        for (BlockKey block : previous.blocks()) {
+            if (targetVolume.contains(block.x(), block.y(), block.z())) {
+                blocks.add(block);
+            }
+        }
+        scanNewBorderCells(world, targetVolume, previousVolume, scanKey.onlyAir(), scanKey.mode(), now, ttlMillis, blocks);
+        return cacheScan(playerId, playerScans, scanKey, Set.copyOf(blocks), now, previous.expiresAtMillis(), true);
+    }
+
+    private boolean canSlide(BorderScanKey previous, BorderScanKey target) {
+        if (!BorderScanFamilyKey.from(previous).equals(BorderScanFamilyKey.from(target))) {
+            return false;
+        }
+        int distance = Math.abs(previous.x() - target.x())
+                + Math.abs(previous.y() - target.y())
+                + Math.abs(previous.z() - target.z());
+        return distance <= 1;
+    }
+
+    private ScanVolume scanVolume(World world, BorderScanKey scanKey) {
+        return new ScanVolume(
+                scanKey.x() - scanKey.radius(),
+                scanKey.x() + scanKey.radius(),
+                Math.max(world.getMinHeight(), scanKey.y() - scanKey.height()),
+                Math.min(world.getMaxHeight() - 1, scanKey.y() + scanKey.height()),
+                scanKey.z() - scanKey.radius(),
+                scanKey.z() + scanKey.radius()
+        );
+    }
+
+    private void scanBorderCells(World world, ScanVolume target, boolean onlyAir, GuardMode mode,
+                                 long now, long ttlMillis, Set<BlockKey> result) {
+        for (int x = target.minX(); x <= target.maxX(); x++) {
+            for (int y = target.minY(); y <= target.maxY(); y++) {
+                for (int z = target.minZ(); z <= target.maxZ(); z++) {
+                    scanBorderCell(world, x, y, z, onlyAir, mode, now, ttlMillis, result);
+                }
+            }
+        }
+    }
+
+    private void scanNewBorderCells(World world, ScanVolume target, ScanVolume previous, boolean onlyAir, GuardMode mode,
+                                     long now, long ttlMillis, Set<BlockKey> result) {
+        if (target.minX() < previous.minX()) {
+            scanXSlice(world, target.minX(), target, onlyAir, mode, now, ttlMillis, result);
+            return;
+        }
+        if (target.maxX() > previous.maxX()) {
+            scanXSlice(world, target.maxX(), target, onlyAir, mode, now, ttlMillis, result);
+            return;
+        }
+        if (target.minY() < previous.minY()) {
+            scanYSlice(world, target.minY(), target, onlyAir, mode, now, ttlMillis, result);
+            return;
+        }
+        if (target.maxY() > previous.maxY()) {
+            scanYSlice(world, target.maxY(), target, onlyAir, mode, now, ttlMillis, result);
+            return;
+        }
+        if (target.minZ() < previous.minZ()) {
+            scanZSlice(world, target.minZ(), target, onlyAir, mode, now, ttlMillis, result);
+            return;
+        }
+        if (target.maxZ() > previous.maxZ()) {
+            scanZSlice(world, target.maxZ(), target, onlyAir, mode, now, ttlMillis, result);
+        }
+    }
+
+    private void scanXSlice(World world, int x, ScanVolume volume, boolean onlyAir, GuardMode mode,
+                            long now, long ttlMillis, Set<BlockKey> result) {
+        for (int y = volume.minY(); y <= volume.maxY(); y++) {
+            for (int z = volume.minZ(); z <= volume.maxZ(); z++) {
+                scanBorderCell(world, x, y, z, onlyAir, mode, now, ttlMillis, result);
+            }
+        }
+    }
+
+    private void scanYSlice(World world, int y, ScanVolume volume, boolean onlyAir, GuardMode mode,
+                            long now, long ttlMillis, Set<BlockKey> result) {
+        for (int x = volume.minX(); x <= volume.maxX(); x++) {
+            for (int z = volume.minZ(); z <= volume.maxZ(); z++) {
+                scanBorderCell(world, x, y, z, onlyAir, mode, now, ttlMillis, result);
+            }
+        }
+    }
+
+    private void scanZSlice(World world, int z, ScanVolume volume, boolean onlyAir, GuardMode mode,
+                            long now, long ttlMillis, Set<BlockKey> result) {
+        for (int x = volume.minX(); x <= volume.maxX(); x++) {
+            for (int y = volume.minY(); y <= volume.maxY(); y++) {
+                scanBorderCell(world, x, y, z, onlyAir, mode, now, ttlMillis, result);
+            }
+        }
+    }
+
+    private void scanBorderCell(World world, int x, int y, int z, boolean onlyAir, GuardMode mode,
+                                long now, long ttlMillis, Set<BlockKey> result) {
+        if (onlyAir && !world.getBlockAt(x, y, z).getType().isAir()) {
+            return;
+        }
+        Location location = new Location(world, x, y, z);
+        if (isBorderBlock(location, mode, now, ttlMillis)) {
+            result.add(BlockKey.from(location));
+        }
     }
 
     private BorderScanKey borderScanKey(Location base, int radius, int height, boolean onlyAir, GuardMode mode) {
@@ -1206,6 +1357,20 @@ public final class BorderService {
     }
 
     private record BorderScanKey(UUID worldId, int x, int y, int z, int radius, int height, boolean onlyAir, GuardMode mode) {
+    }
+
+    private record BorderScanFamilyKey(UUID worldId, int radius, int height, boolean onlyAir, GuardMode mode) {
+        private static BorderScanFamilyKey from(BorderScanKey key) {
+            return new BorderScanFamilyKey(key.worldId(), key.radius(), key.height(), key.onlyAir(), key.mode());
+        }
+    }
+
+    private record ScanVolume(int minX, int maxX, int minY, int maxY, int minZ, int maxZ) {
+        private boolean contains(int x, int y, int z) {
+            return x >= minX && x <= maxX
+                    && y >= minY && y <= maxY
+                    && z >= minZ && z <= maxZ;
+        }
     }
 
     private record BorderScan(BorderScanKey key, Set<BlockKey> blocks, long expiresAtMillis) {
