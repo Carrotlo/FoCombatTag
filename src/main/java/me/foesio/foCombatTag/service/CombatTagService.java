@@ -127,6 +127,7 @@ public final class CombatTagService {
         }
         if (removed != null && notify && player.isOnline()) {
             plugin.messages().send(player, "combat-untagged");
+            plugin.sounds().play(player, "combat.untagged");
         }
         clearSchedulesIfIdle();
         return removed != null;
@@ -152,6 +153,7 @@ public final class CombatTagService {
                 Bukkit.getPluginManager().callEvent(new CombatTagRemoveEvent(player, reason));
                 if (notify) {
                     plugin.messages().send(player, "combat-untagged");
+                    plugin.sounds().play(player, "combat.untagged");
                 }
             }
         }
@@ -260,6 +262,7 @@ public final class CombatTagService {
         scheduleRuntimeWork(entry, now, false);
         if (!wasTagged) {
             plugin.messages().send(player, "combat-tagged", Map.of("{seconds}", String.valueOf(event.getDurationSeconds())));
+            plugin.sounds().play(player, "combat.tagged");
         }
         plugin.elytraGuard().enforce(player);
         borderService.render(player);
@@ -344,6 +347,7 @@ public final class CombatTagService {
             borderService.clear(player);
             Bukkit.getPluginManager().callEvent(new CombatTagRemoveEvent(player, CombatTagRemoveReason.EXPIRE));
             plugin.messages().send(player, "combat-untagged");
+            plugin.sounds().play(player, "combat.untagged");
         }
         clearSchedulesIfIdle();
     }

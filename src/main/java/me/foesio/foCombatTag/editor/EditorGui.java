@@ -81,6 +81,7 @@ public final class EditorGui implements Listener {
 
     public void open(Player player) {
         openMain(player);
+        plugin.editorSounds().open(player);
     }
 
     private void openMain(Player player) {
@@ -140,6 +141,11 @@ public final class EditorGui implements Listener {
         TriStateSelectionMenus.open(player, enclosedRegionsRequest(page, filter));
     }
 
+    private void openEnclosedRegionsScreen(Player player) {
+        openEnclosedRegions(player, 0);
+        plugin.editorSounds().open(player);
+    }
+
     private void openCommands(Player player, int page) {
         openCommands(player, page, "");
     }
@@ -169,6 +175,11 @@ public final class EditorGui implements Listener {
                 .context(new CommandBrowserContext())
                 .build();
         EntryBrowserMenus.open(player, request);
+    }
+
+    private void openCommandsScreen(Player player) {
+        openCommands(player, 0);
+        plugin.editorSounds().open(player);
     }
 
     private void openCombatWallSettings(Player player) {
@@ -219,6 +230,11 @@ public final class EditorGui implements Listener {
 
         inventory.setItem(BACK_SLOT, buttons.back());
         player.openInventory(inventory);
+    }
+
+    private void openCombatWallSettingsScreen(Player player) {
+        openCombatWallSettings(player);
+        plugin.editorSounds().open(player);
     }
 
     @EventHandler
@@ -281,24 +297,28 @@ public final class EditorGui implements Listener {
                 try {
                     commandIndex = Integer.parseInt(click.entryId());
                 } catch (NumberFormatException exception) {
+                    plugin.editorSounds().error(player);
                     return;
                 }
                 List<String> commands = configuredAllowedCommands();
                 if (commandIndex < 0 || commandIndex >= commands.size()) {
+                    plugin.editorSounds().error(player);
                     openCommands(player, holder.request().page(), holder.request().filter());
                     return;
                 }
                 String removed = commands.remove(commandIndex);
-                saveList(player, "commands.allowed-while-tagged", commands, "Allowed commands", commands.size() + " entries");
-                plugin.messages().send(player, "editor-command-removed", Map.of("{command}", removed));
-                openCommands(player, holder.request().page(), holder.request().filter());
+                if (saveList(player, "commands.allowed-while-tagged", commands, "Allowed commands", commands.size() + " entries")) {
+                    plugin.editorSounds().delete(player);
+                    plugin.messages().send(player, "editor-command-removed", Map.of("{command}", removed));
+                    openCommands(player, holder.request().page(), holder.request().filter());
+                }
             }
             case ADD -> startCommandPrompt(player);
-            case BACK -> openMain(player);
-            case SEARCH -> openCommandSearch(player, holder.request().filter());
-            case CLEAR_SEARCH -> openCommands(player, 0, "");
-            case PREVIOUS_PAGE -> openCommands(player, holder.request().page() - 1, holder.request().filter());
-            case NEXT_PAGE -> openCommands(player, holder.request().page() + 1, holder.request().filter());
+            case BACK -> { plugin.editorSounds().back(player); openMain(player); }
+            case SEARCH -> { plugin.editorSounds().search(player); openCommandSearch(player, holder.request().filter()); }
+            case CLEAR_SEARCH -> { plugin.editorSounds().clearSearch(player); openCommands(player, 0, ""); }
+            case PREVIOUS_PAGE -> { plugin.editorSounds().previousPage(player); openCommands(player, holder.request().page() - 1, holder.request().filter()); }
+            case NEXT_PAGE -> { plugin.editorSounds().nextPage(player); openCommands(player, holder.request().page() + 1, holder.request().filter()); }
             case EXTRA, NONE -> {
             }
         }
@@ -329,13 +349,13 @@ public final class EditorGui implements Listener {
     private void handleMainClick(Player player, int slot) {
         switch (slot) {
             case 10 -> startNumberPrompt(player, PromptType.DURATION);
-            case 11 -> openCombatWallSettings(player);
+            case 11 -> openCombatWallSettingsScreen(player);
             case 12 -> toggle(player, "combat.tag-player-explosions", "Explosion combat tag");
             case 13 -> toggle(player, "combat.disable-elytra-while-tagged", "Disable elytra");
             case 14 -> toggle(player, "commands.block-while-tagged", "Command blocking");
-            case 15 -> openCommands(player, 0);
+            case 15 -> openCommandsScreen(player);
             case 16 -> toggle(player, "combat.kill-on-logout", "Kill on logout");
-            case 19 -> openEnclosedRegions(player, 0);
+            case 19 -> openEnclosedRegionsScreen(player);
             case 20 -> cyclePearlCooldownMode(player);
             case 21 -> startNumberPrompt(player, PromptType.PEARL_COOLDOWN);
             case 22 -> toggle(player, "combat.pearl-extends-combat", "Pearl combat extension");
@@ -346,13 +366,14 @@ public final class EditorGui implements Listener {
 
     private void handleCombatWallSettingsClick(Player player, int slot) {
         if (slot == BACK_SLOT) {
+            plugin.editorSounds().back(player);
             openMain(player);
             return;
         }
         switch (slot) {
             case 10 -> save(player, "worldguard.border.enabled", !plugin.settings().worldGuardBorderEnabled(),
                     "Combat wall", !plugin.settings().worldGuardBorderEnabled() ? "enabled" : "disabled", View.COMBAT_WALL_SETTINGS);
-            case 11 -> openBorderMaterialChooser(player, View.COMBAT_WALL_SETTINGS);
+            case 11 -> openBorderMaterialChooserScreen(player, View.COMBAT_WALL_SETTINGS);
             case 12 -> save(player, "worldguard.border.advanced-visuals-enabled", !plugin.settings().worldGuardBorderAdvancedVisualsEnabled(),
                     "Advanced visuals", !plugin.settings().worldGuardBorderAdvancedVisualsEnabled() ? "enabled" : "disabled", View.COMBAT_WALL_SETTINGS);
             case 13 -> startTextPrompt(player, PromptType.BORDER_VISUAL_COLOR);
@@ -421,10 +442,12 @@ public final class EditorGui implements Listener {
         }
         if (input.equalsIgnoreCase("cancel")) {
             plugin.messages().send(player, "editor-prompt-cancelled");
+            plugin.editorSounds().back(player);
             reopenPromptPage(player, prompt);
             return;
         }
         if (input.isBlank()) {
+            plugin.editorSounds().error(player);
             plugin.messages().send(player, "editor-save-failed", Map.of("{error}", "Empty input"));
             reopenPromptPage(player, prompt);
             return;
@@ -455,6 +478,7 @@ public final class EditorGui implements Listener {
         try {
             value = Integer.parseInt(input);
         } catch (NumberFormatException exception) {
+            plugin.editorSounds().error(player);
             plugin.messages().send(player, "editor-invalid-number", Map.of(
                     "{min}", type.minText(),
                     "{max}", type.maxText()
@@ -463,6 +487,7 @@ public final class EditorGui implements Listener {
             return;
         }
         if (value < type.min() || value > type.max()) {
+            plugin.editorSounds().error(player);
             plugin.messages().send(player, "editor-invalid-number", Map.of(
                     "{min}", type.minText(),
                     "{max}", type.maxText()
@@ -479,6 +504,7 @@ public final class EditorGui implements Listener {
         try {
             value = Double.parseDouble(stripMultiplierSuffix(input));
         } catch (NumberFormatException exception) {
+            plugin.editorSounds().error(player);
             plugin.messages().send(player, "editor-invalid-number", Map.of(
                     "{min}", type.minText(),
                     "{max}", type.maxText()
@@ -487,6 +513,7 @@ public final class EditorGui implements Listener {
             return;
         }
         if (!Double.isFinite(value) || value < type.min() || value > type.max()) {
+            plugin.editorSounds().error(player);
             plugin.messages().send(player, "editor-invalid-number", Map.of(
                     "{min}", type.minText(),
                     "{max}", type.maxText()
@@ -502,6 +529,7 @@ public final class EditorGui implements Listener {
         String value = stripColorFormatBreak(input).trim();
         if (type == PromptType.BORDER_VISUAL_COLOR) {
             if (!isValidColorValue(value)) {
+                plugin.editorSounds().error(player);
                 plugin.messages().send(player, "editor-save-failed", Map.of("{error}", "Use #RRGGBB or a supported color name"));
                 openCombatWallSettings(player);
                 return;
@@ -536,11 +564,17 @@ public final class EditorGui implements Listener {
         String normalized = normalizeCommand(input);
         List<String> commands = configuredAllowedCommands();
         boolean exists = commands.stream().map(this::normalizeCommand).anyMatch(normalized::equals);
-        if (!exists) {
-            commands.add(normalized);
+        if (exists) {
+            plugin.editorSounds().error(player);
+            plugin.messages().send(player, "editor-save-failed", Map.of("{error}", "That command is already allowed"));
+            openCommands(player, 0);
+            return;
         }
-        saveList(player, "commands.allowed-while-tagged", commands, "Allowed commands", commands.size() + " entries");
-        openCommands(player, 0);
+        commands.add(normalized);
+        if (saveList(player, "commands.allowed-while-tagged", commands, "Allowed commands", commands.size() + " entries")) {
+            plugin.editorSounds().add(player);
+            openCommands(player, 0);
+        }
     }
 
     private void save(Player player, String path, Object value, String setting, String displayValue) {
@@ -553,24 +587,33 @@ public final class EditorGui implements Listener {
             config.set(path, value);
             plugin.saveConfig();
             plugin.reloadPluginQuietly();
+            if (value instanceof Boolean enabled) {
+                plugin.editorSounds().toggle(player, enabled);
+            } else {
+                plugin.editorSounds().save(player);
+            }
             plugin.messages().send(player, "editor-saved", Map.of("{setting}", setting, "{value}", displayValue));
             openView(player, reopenView);
         } catch (RuntimeException exception) {
             plugin.logError("Editor save failed: " + exception.getMessage(), exception);
+            plugin.editorSounds().error(player);
             plugin.messages().send(player, "editor-save-failed", Map.of("{error}", exception.getMessage()));
         }
     }
 
-    private void saveList(Player player, String path, List<String> value, String setting, String displayValue) {
+    private boolean saveList(Player player, String path, List<String> value, String setting, String displayValue) {
         try {
             FileConfiguration config = plugin.getConfig();
             config.set(path, value);
             plugin.saveConfig();
             plugin.reloadPluginQuietly();
             plugin.messages().send(player, "editor-saved", Map.of("{setting}", setting, "{value}", displayValue));
+            return true;
         } catch (RuntimeException exception) {
             plugin.logError("Editor save failed: " + exception.getMessage(), exception);
+            plugin.editorSounds().error(player);
             plugin.messages().send(player, "editor-save-failed", Map.of("{error}", exception.getMessage()));
+            return false;
         }
     }
 
@@ -586,6 +629,7 @@ public final class EditorGui implements Listener {
         );
         PearlCooldownMode next = PearlCooldownMode.fromConfig(nextValue);
         if (next == null) {
+            plugin.editorSounds().error(player);
             plugin.messages().send(player, "editor-save-failed", Map.of("{error}", "Invalid pearl cooldown option"));
             openMain(player);
             return;
@@ -596,6 +640,7 @@ public final class EditorGui implements Listener {
             config.set("combat.pearl-cooldown.enabled", null);
             plugin.saveConfig();
             plugin.reloadPluginQuietly();
+            plugin.editorSounds().cycle(player);
             plugin.messages().send(player, "editor-saved", Map.of(
                     "{setting}", "Pearl cooldown",
                     "{value}", next.displayName()
@@ -603,6 +648,7 @@ public final class EditorGui implements Listener {
             openMain(player);
         } catch (RuntimeException exception) {
             plugin.logError("Editor save failed: " + exception.getMessage(), exception);
+            plugin.editorSounds().error(player);
             plugin.messages().send(player, "editor-save-failed", Map.of("{error}", exception.getMessage()));
         }
     }
@@ -621,6 +667,11 @@ public final class EditorGui implements Listener {
 
     private void openBorderMaterialChooser(Player player, View returnView) {
         openBorderMaterialChooser(player, returnView, 0, "");
+    }
+
+    private void openBorderMaterialChooserScreen(Player player, View returnView) {
+        openBorderMaterialChooser(player, returnView);
+        plugin.editorSounds().open(player);
     }
 
     private void openBorderMaterialChooser(Player player, View returnView, int page, String filter) {
@@ -663,9 +714,11 @@ public final class EditorGui implements Listener {
             return;
         }
         switch (click.action()) {
-            case BACK -> openMaterialReturnView(player);
-            case PREVIOUS_PAGE, NEXT_PAGE, CLEAR_SEARCH -> MaterialChooserMenus.open(player, click.nextRequest());
-            case SEARCH -> startMaterialSearchPrompt(player, holder.request().filter());
+            case BACK -> { plugin.editorSounds().back(player); openMaterialReturnView(player); }
+            case PREVIOUS_PAGE -> { plugin.editorSounds().previousPage(player); MaterialChooserMenus.open(player, click.nextRequest()); }
+            case NEXT_PAGE -> { plugin.editorSounds().nextPage(player); MaterialChooserMenus.open(player, click.nextRequest()); }
+            case CLEAR_SEARCH -> { plugin.editorSounds().clearSearch(player); MaterialChooserMenus.open(player, click.nextRequest()); }
+            case SEARCH -> { plugin.editorSounds().search(player); startMaterialSearchPrompt(player, holder.request().filter()); }
             case SELECT, TOGGLE -> saveBorderMaterialChoice(player, click.material());
             default -> {
             }
@@ -679,6 +732,7 @@ public final class EditorGui implements Listener {
 
     private void saveBorderMaterialChoice(Player player, Material material) {
         if (material == null || !material.isBlock()) {
+            plugin.editorSounds().error(player);
             plugin.messages().send(player, "editor-save-failed", Map.of("{error}", "Unknown block material"));
             openMaterialReturnView(player);
             return;
@@ -796,9 +850,11 @@ public final class EditorGui implements Listener {
             return;
         }
         switch (click.action()) {
-            case BACK -> openMain(player);
-            case PREVIOUS_PAGE, NEXT_PAGE, CLEAR_SEARCH -> TriStateSelectionMenus.open(player, click.nextRequest());
-            case SEARCH -> startRegionSearchPrompt(player, holder.request().filter());
+            case BACK -> { plugin.editorSounds().back(player); openMain(player); }
+            case PREVIOUS_PAGE -> { plugin.editorSounds().previousPage(player); TriStateSelectionMenus.open(player, click.nextRequest()); }
+            case NEXT_PAGE -> { plugin.editorSounds().nextPage(player); TriStateSelectionMenus.open(player, click.nextRequest()); }
+            case CLEAR_SEARCH -> { plugin.editorSounds().clearSearch(player); TriStateSelectionMenus.open(player, click.nextRequest()); }
+            case SEARCH -> { plugin.editorSounds().search(player); startRegionSearchPrompt(player, holder.request().filter()); }
             case TOGGLE -> saveEnclosedRegionStates(player, click.nextRequest());
             default -> {
             }
@@ -811,8 +867,10 @@ public final class EditorGui implements Listener {
                 .map(Map.Entry::getKey)
                 .sorted(String.CASE_INSENSITIVE_ORDER)
                 .toList();
-        saveList(player, "worldguard.enclosed-regions", selected, "Enclosed regions", selected.size() + " selected");
-        openEnclosedRegions(player, request.page(), request.filter());
+        if (saveList(player, "worldguard.enclosed-regions", selected, "Enclosed regions", selected.size() + " selected")) {
+            plugin.editorSounds().cycle(player);
+            openEnclosedRegions(player, request.page(), request.filter());
+        }
     }
 
     private void startRegionSearchPrompt(Player player, String currentFilter) {
@@ -976,6 +1034,12 @@ public final class EditorGui implements Listener {
 
     private void openTextInput(Player player, TextDialogRequest request, java.util.function.Consumer<String> onSubmit, Runnable onCancel, String type) {
         try {
+            Runnable cancelAction = () -> {
+                plugin.editorSounds().back(player);
+                if (onCancel != null) {
+                    onCancel.run();
+                }
+            };
             boolean nativeOpened = EditorDialogInputs.openTextFromInventory(
                     plugin,
                     plugin.inventoryCloseSuppressor(),
@@ -983,13 +1047,16 @@ public final class EditorGui implements Listener {
                     player,
                     request,
                     input -> onSubmit.accept(input == null ? "" : input.trim()),
-                    onCancel
+                    cancelAction
             );
-            if (!nativeOpened) {
+            if (nativeOpened) {
+                plugin.editorSounds().open(player);
+            } else {
                 warnNativeFallback(player);
             }
         } catch (RuntimeException | LinkageError exception) {
             plugin.logWarning("Editor " + type + " input failed: " + exception.getMessage());
+            plugin.editorSounds().error(player);
             plugin.messages().send(player, "editor-save-failed", Map.of("{error}", "Input failed"));
             if (onCancel != null) {
                 onCancel.run();

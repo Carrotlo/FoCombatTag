@@ -3,12 +3,12 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>me.foesio</groupId>
     <artifactId>FoCombatTag</artifactId>
-    <version>1.7</version>
+    <version>1.8</version>
     <packaging>jar</packaging>
     <name>FoCombatTag</name>
     <properties>
         <java.version>21</java.version>
-        <fo-plugin-core.version>0.1.0-SNAPSHOT</fo-plugin-core.version>
+        <fo-plugin-core.version>1.0</fo-plugin-core.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>${java.version}</maven.compiler.release>
     </properties>

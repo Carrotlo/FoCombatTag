@@ -42,9 +42,11 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class PlayerStateListener implements Listener {
     private static final int PEARL_GUARD_MAX_TICKS = 20 * 20;
+    private static final long PEARL_COOLDOWN_SOUND_INTERVAL_MILLIS = 350L;
 
     private final FoCombatTag plugin;
     private final Map<UUID, Long> pearlCooldowns = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> pearlCooldownSoundTimes = new ConcurrentHashMap<>();
     private final Map<UUID, TrackedPearl> trackedPearls = new ConcurrentHashMap<>();
     private final Set<UUID> queuedBorderRenders = ConcurrentHashMap.newKeySet();
     private BukkitTask pearlGuardTask;
@@ -245,6 +247,7 @@ public final class PlayerStateListener implements Listener {
         }
         plugin.combatTags().untag(player, CombatTagRemoveReason.QUIT, false);
         pearlCooldowns.remove(player.getUniqueId());
+        pearlCooldownSoundTimes.remove(player.getUniqueId());
         queuedBorderRenders.remove(player.getUniqueId());
         removeTrackedPearls(player.getUniqueId());
     }
@@ -385,6 +388,11 @@ public final class PlayerStateListener implements Listener {
             event.setUseItemInHand(Event.Result.DENY);
             long remainingSeconds = Math.max(1L, (availableAt - now + 999L) / 1000L);
             plugin.messages().send(player, "pearl-cooldown", Map.of("{seconds}", String.valueOf(remainingSeconds)));
+            long lastSound = pearlCooldownSoundTimes.getOrDefault(player.getUniqueId(), 0L);
+            if (now - lastSound >= PEARL_COOLDOWN_SOUND_INTERVAL_MILLIS) {
+                pearlCooldownSoundTimes.put(player.getUniqueId(), now);
+                plugin.sounds().play(player, "combat.pearl-cooldown");
+            }
             return;
         }
     }

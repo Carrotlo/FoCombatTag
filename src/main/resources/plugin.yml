@@ -12,7 +12,6 @@ commands:
   focombattagadmin:
     description: FoCombatTag admin command
     aliases: [ combattagadmin ]
-    permission: focombattag.admin
     usage: /<command> [version|reload|editor|tag|untag|status]
   elytravault:
     description: Claim elytras stored while combat tagged

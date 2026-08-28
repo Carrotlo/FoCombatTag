@@ -31,6 +31,7 @@ public final class AdminCommand {
                 .commandName("focombattagadmin")
                 .permission(FoCombatTag.ADMIN_PERMISSION)
                 .updates(plugin.updates())
+                .adminSounds(plugin.adminSounds())
                 .adminMessages(FoAdminMessages.builder()
                         .generalNoPermission("no-permission", "{prefix}{bad}No permission.")
                         .generalPlayerOnly("player-only", "{prefix}{bad}Player only.")
@@ -70,9 +71,15 @@ public final class AdminCommand {
         try {
             plugin.reloadPlugin();
             plugin.messages().send(sender, "reload-complete");
+            if (sender instanceof Player player) {
+                plugin.adminSounds().reload(player);
+            }
         } catch (RuntimeException exception) {
             plugin.logError("Reload failed: " + exception.getMessage(), exception);
             plugin.messages().send(sender, "reload-failed", Map.of("{error}", exception.getMessage()));
+            if (sender instanceof Player player) {
+                plugin.adminSounds().reloadError(player);
+            }
         }
         return true;
     }
@@ -104,6 +111,7 @@ public final class AdminCommand {
         Player target = FoAdminArguments.onlinePlayer().parse(args[1]).orElse(null);
         if (target == null) {
             plugin.messages().send(sender, "unknown-player");
+            plugin.adminSounds().updateError(sender);
             return true;
         }
         if (plugin.combatTags().tagManual(target)) {
@@ -114,6 +122,7 @@ public final class AdminCommand {
             plugin.logInfo(sender.getName() + " tagged " + target.getName() + ".");
         } else {
             plugin.messages().send(sender, "tag-cancelled");
+            plugin.adminSounds().updateError(sender);
         }
         return true;
     }
@@ -134,6 +143,7 @@ public final class AdminCommand {
         Player target = FoAdminArguments.onlinePlayer().parse(args[1]).orElse(null);
         if (target == null) {
             plugin.messages().send(sender, "unknown-player");
+            plugin.adminSounds().updateError(sender);
             return true;
         }
         plugin.combatTags().untag(target, true);
@@ -152,6 +162,7 @@ public final class AdminCommand {
         Player target = FoAdminArguments.onlinePlayer().parse(args[1]).orElse(null);
         if (target == null) {
             plugin.messages().send(sender, "unknown-player");
+            plugin.adminSounds().updateError(sender);
             return true;
         }
         CombatTagService.TagView view = plugin.combatTags().view(target);
@@ -203,6 +214,7 @@ public final class AdminCommand {
 
     private void usage(CommandSender sender, String label, String usage) {
         plugin.messages().send(sender, "bad-syntax", Map.of("{usage}", "/" + label + " " + usage));
+        plugin.adminSounds().updateError(sender);
     }
 
 }

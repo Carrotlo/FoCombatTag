@@ -9,6 +9,9 @@ import me.foesio.core.message.FoMessageMigrations;
 import me.foesio.core.message.FoMessageService;
 import me.foesio.core.reload.FoReloadRegistry;
 import me.foesio.core.reload.FoReloadResult;
+import me.foesio.core.sound.FoAdminSounds;
+import me.foesio.core.sound.FoEditorSounds;
+import me.foesio.core.sound.FoSoundService;
 import me.foesio.core.update.UpdateNoticeService;
 import me.foesio.foCombatTag.api.FoCombatTagApi;
 import me.foesio.foCombatTag.command.AdminCommand;
@@ -42,6 +45,9 @@ public final class FoCombatTag extends JavaPlugin {
     private FoMessageService messages;
     private FoFileLogger fileLogService;
     private UpdateNoticeService updates;
+    private FoSoundService sounds;
+    private FoAdminSounds adminSounds;
+    private FoEditorSounds editorSounds;
     private boolean dialogInputsCreated;
     private WorldGuardHook worldGuardHook;
     private BorderService borderService;
@@ -118,6 +124,7 @@ public final class FoCombatTag extends JavaPlugin {
                 .addMessages(messages)
                 .add("file-logging", () -> fileLogService.configure(settings.fileLogging(), false))
                 .add("core", () -> refreshCore(false))
+                .add("sounds", () -> sounds.reload())
                 .add("worldguard", () -> worldGuardHook.reload(logStatus))
                 .add("border", borderService::reload)
                 .add("combat-tags", combatTagService::reload)
@@ -144,8 +151,11 @@ public final class FoCombatTag extends JavaPlugin {
         }
         dialogInputsCreated = false;
         core = FoPluginCore.create(this);
+        sounds = core.createSounds();
+        adminSounds = FoAdminSounds.create(sounds);
+        editorSounds = FoEditorSounds.create(sounds);
         core.metrics(BSTATS_PLUGIN_ID);
-        updates = core.createUpdateNotices(messages, MODRINTH_PROJECT_ID);
+        updates = core.createUpdateNotices(messages, MODRINTH_PROJECT_ID, adminSounds);
         if (startup) {
             updates.start();
             core.warnIfNativeDialogsUnavailable();
@@ -222,6 +232,18 @@ public final class FoCombatTag extends JavaPlugin {
 
     public UpdateNoticeService updates() {
         return updates;
+    }
+
+    public FoSoundService sounds() {
+        return sounds;
+    }
+
+    public FoAdminSounds adminSounds() {
+        return adminSounds;
+    }
+
+    public FoEditorSounds editorSounds() {
+        return editorSounds;
     }
 
     public WorldGuardHook worldGuardHook() {

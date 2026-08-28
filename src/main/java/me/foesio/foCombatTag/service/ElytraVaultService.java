@@ -70,6 +70,7 @@ public final class ElytraVaultService {
         plugin.messages().send(player, "elytra-vault-stored", Map.of(
                 "{count}", String.valueOf(items.size())
         ));
+        plugin.sounds().play(player, "elytra.stored");
     }
 
     public ClaimResult claim(Player player) {

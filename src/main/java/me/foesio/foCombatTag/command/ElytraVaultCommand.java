@@ -32,6 +32,9 @@ public final class ElytraVaultCommand implements CommandExecutor {
             plugin.messages().send(player, "elytra-vault-claimed", Map.of(
                     "{count}", String.valueOf(result.claimed())
             ));
+            if (result.claimed() > 0) {
+                plugin.sounds().playWithPitchVariation(player, "elytra.claimed", 0.05f);
+            }
             return true;
         }
 
@@ -39,6 +42,9 @@ public final class ElytraVaultCommand implements CommandExecutor {
                 "{claimed}", String.valueOf(result.claimed()),
                 "{remaining}", String.valueOf(result.remaining())
         ));
+        if (result.claimed() > 0) {
+            plugin.sounds().playWithPitchVariation(player, "elytra.claimed", 0.05f);
+        }
         return true;
     }
 }
