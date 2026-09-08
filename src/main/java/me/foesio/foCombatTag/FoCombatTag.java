@@ -68,6 +68,7 @@ public final class FoCombatTag extends JavaPlugin {
 
         messages = FoMessageService.load(this, messageMigrations());
         refreshCore(true);
+        migrateSprites();
         worldGuardHook = new WorldGuardHook(this);
         worldGuardHook.reload();
         borderService = new BorderService(this, worldGuardHook);
@@ -162,6 +163,36 @@ public final class FoCombatTag extends JavaPlugin {
         } else {
             updates.registerJoinListener();
         }
+    }
+
+    private void migrateSprites() {
+        messages.migrateToVersion(core.migrations(), 1, config -> {
+            boolean changed = false;
+            changed |= FoMessageService.addMissingToken(config, "tokens.prefix", ":shield:", null);
+            changed |= FoMessageService.addMissingToken(config, "reload-complete", ":emerald:");
+            changed |= FoMessageService.addMissingToken(config, "reload-failed", ":redstone:");
+            changed |= FoMessageService.addMissingToken(config, "combat-tagged", ":clock:");
+            changed |= FoMessageService.addMissingToken(config, "combat-untagged", ":emerald:");
+            changed |= FoMessageService.addMissingToken(config, "command-blocked", ":barrier:");
+            changed |= FoMessageService.addMissingToken(config, "elytra-vault-stored", ":elytra:");
+            changed |= FoMessageService.addMissingToken(config, "elytra-vault-claimed", ":elytra:");
+            changed |= FoMessageService.addMissingToken(config, "editor-opened", ":book:");
+            changed |= FoMessageService.addMissingToken(config, "editor-saved", ":emerald:");
+            changed |= FoMessageService.addMissingToken(config, "editor-save-failed", ":redstone:");
+            return true;
+        });
+        messages.migrateToVersion(core.migrations(), 2, config -> {
+            String oldPrefix = ":shield: {theme}FoCombatTag &8\u00bb {muted}";
+            if (!oldPrefix.equals(config.getString("tokens.prefix"))) {
+                return true;
+            }
+            config.set("tokens.prefix", ":iron_sword: {theme}FoCombatTag &8\u00bb {muted}");
+            return true;
+        });
+        messages.migrateToVersion(core.migrations(), 3, config -> {
+            FoMessageService.addMissingToken(config, "actionbar-tagged", ":clock:", null);
+            return true;
+        });
     }
 
     private void registerCommands() {

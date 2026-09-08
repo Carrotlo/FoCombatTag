@@ -1,5 +1,6 @@
 package me.foesio.foCombatTag.service;
 
+import me.foesio.core.dialog.DialogIcons;
 import me.foesio.foCombatTag.FoCombatTag;
 import me.foesio.foCombatTag.api.CombatTagCause;
 import me.foesio.foCombatTag.api.CombatTagInfo;
@@ -8,6 +9,7 @@ import me.foesio.foCombatTag.api.event.CombatTagApplyEvent;
 import me.foesio.foCombatTag.api.event.CombatTagRemoveEvent;
 import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.TextComponent;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -451,15 +453,29 @@ public final class CombatTagService {
         if (!shouldSendActionbar(remainingSeconds)) {
             return;
         }
-        String message = plugin.messages().render("actionbar-tagged", "{bad}Combat {muted}| {theme}{seconds}s", Map.of(
+        Map<String, String> placeholders = Map.of(
                 "seconds", String.valueOf(remainingSeconds)
-        ));
+        );
+        String message = plugin.messages().render("actionbar-tagged", ":clock: {bad}Combat {muted}| {theme}{seconds}s", placeholders);
         UUID playerId = player.getUniqueId();
         if (message.equals(lastActionbarMessages.get(playerId))) {
             return;
         }
         lastActionbarMessages.put(playerId, message);
-        player.spigot().sendMessage(ChatMessageType.ACTION_BAR, TextComponent.fromLegacyText(message));
+        Component actionbar = plugin.messages().renderComponent(
+                player,
+                "actionbar-tagged",
+                ":clock: {bad}Combat {muted}| {theme}{seconds}s",
+                placeholders
+        );
+        try {
+            player.getClass().getMethod("sendActionBar", Component.class).invoke(player, actionbar);
+        } catch (ReflectiveOperationException | LinkageError exception) {
+            player.spigot().sendMessage(
+                    ChatMessageType.ACTION_BAR,
+                    TextComponent.fromLegacyText(DialogIcons.fallbackText(actionbar))
+            );
+        }
     }
 
     private boolean shouldSendActionbar(long remainingSeconds) {

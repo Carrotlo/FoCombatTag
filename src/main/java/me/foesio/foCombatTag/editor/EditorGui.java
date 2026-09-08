@@ -90,46 +90,48 @@ public final class EditorGui implements Listener {
         holder.setInventory(inventory);
         fill(inventory);
 
-        inventory.setItem(10, item(Material.CLOCK, "{theme}Combat Timer", List.of(
+        inventory.setItem(10, button(player, FoStyle.THEME, Material.CLOCK, "Combat Timer", List.of(
                 "{white}Current: {theme}" + plugin.settings().combatDurationSeconds() + "s",
                 "{white}Click to edit."
-        )));
-        inventory.setItem(11, item(Material.IRON_BARS, "{theme}Combat Wall Settings", List.of(
+        ), "edit combat duration"));
+        inventory.setItem(11, button(player, FoStyle.THEME, Material.IRON_BARS, "Combat Wall Settings", List.of(
                 "{white}Status: " + (plugin.settings().worldGuardBorderEnabled() ? "{good}Enabled" : "{bad}Disabled"),
                 "{white}Advanced visuals: " + (plugin.settings().worldGuardBorderAdvancedVisualsEnabled() ? "{good}Enabled" : "{bad}Disabled"),
                 "{white}Click to configure."
-        )));
-        inventory.setItem(12, item(Material.END_CRYSTAL,
-                (plugin.settings().tagPlayerExplosions() ? "{good}" : "{bad}") + "Explosion Combat Tag", List.of(
+        ), "configure combat wall"));
+        boolean tagExplosions = plugin.settings().tagPlayerExplosions();
+        inventory.setItem(12, button(player, tagExplosions ? FoStyle.GOOD : FoStyle.BAD, Material.END_CRYSTAL,
+                "Explosion Combat Tag", List.of(
                         "{white}State: " + (plugin.settings().tagPlayerExplosions() ? "{good}Enabled" : "{bad}Disabled"),
                         "{white}Player-caused explosions tag",
                         "{white}affected players in combat.",
                         "{white}Click to toggle."
-                )));
-        inventory.setItem(13, toggleItem(Material.ELYTRA, "Disable Elytra", plugin.settings().disableElytraWhileTagged()));
-        inventory.setItem(14, toggleItem(Material.COMMAND_BLOCK, "Block Commands", plugin.settings().blockCommandsWhileTagged()));
-        inventory.setItem(15, item(Material.WRITABLE_BOOK, "{theme}Allowed Commands", List.of(
+                ), "toggle explosion combat tagging"));
+        inventory.setItem(13, toggleItem(player, Material.ELYTRA, "Disable Elytra", plugin.settings().disableElytraWhileTagged()));
+        inventory.setItem(14, toggleItem(player, Material.COMMAND_BLOCK, "Block Commands", plugin.settings().blockCommandsWhileTagged()));
+        inventory.setItem(15, button(player, FoStyle.THEME, Material.WRITABLE_BOOK, "Allowed Commands", List.of(
                 "{white}Entries: {theme}" + configuredAllowedCommands().size(),
                 "{white}Click to browse."
-        )));
-        inventory.setItem(16, toggleItem(Material.SKELETON_SKULL, "Kill On Logout", plugin.settings().killOnLogout()));
-        inventory.setItem(19, item(Material.ENDER_EYE, "{theme}Enclosed Regions", List.of(
+        ), "browse allowed commands"));
+        inventory.setItem(16, toggleItem(player, Material.SKELETON_SKULL, "Kill On Logout", plugin.settings().killOnLogout()));
+        inventory.setItem(19, button(player, FoStyle.THEME, Material.ENDER_EYE, "Enclosed Regions", List.of(
                 "{white}Selected: {theme}" + plugin.settings().enclosedWorldGuardRegions().size(),
                 "{white}State: " + (plugin.settings().hasEnclosedWorldGuardRegions() ? "{good}Enabled" : "{bad}Disabled"),
                 "{white}Click to select WorldGuard regions."
-        )));
-        inventory.setItem(20, pearlCooldownModeItem());
-        inventory.setItem(21, item(Material.CLOCK, "{theme}Pearl Cooldown Timer", List.of(
+        ), "configure enclosed regions"));
+        inventory.setItem(20, pearlCooldownModeItem(player));
+        inventory.setItem(21, button(player, FoStyle.THEME, Material.CLOCK, "Pearl Cooldown Timer", List.of(
                 "{white}Current: {theme}" + plugin.settings().pearlCooldownSeconds() + "s",
                 "{white}Click to edit."
-        )));
-        inventory.setItem(22, item(Material.ENDER_PEARL,
-                (plugin.settings().pearlExtendsCombat() ? "{good}" : "{bad}") + "Pearls Extend Combat", List.of(
+        ), "edit pearl cooldown"));
+        boolean pearlExtends = plugin.settings().pearlExtendsCombat();
+        inventory.setItem(22, button(player, pearlExtends ? FoStyle.GOOD : FoStyle.BAD, Material.ENDER_PEARL,
+                "Pearls Extend Combat", List.of(
                         "{white}State: " + (plugin.settings().pearlExtendsCombat() ? "{good}Enabled" : "{bad}Disabled"),
                         "{white}A pearl landing while tagged",
                         "{white}resets the combat timer.",
                         "{white}Click to toggle."
-                )));
+                ), "toggle pearl combat extension"));
         player.openInventory(inventory);
     }
 
@@ -155,10 +157,10 @@ public final class EditorGui implements Listener {
         List<EntryBrowserRequest.Entry> entries = commandEntries.stream()
                 .map(entry -> EntryBrowserRequest.Entry.of(
                         String.valueOf(entry.index()),
-                        item(Material.PAPER, "{theme}" + entry.command(), List.of(
+                        button(player, FoStyle.THEME, Material.PAPER, entry.command(), List.of(
                                 "{white}Shift right-click to remove.",
                                 "{white}Allowed while tagged."
-                        ))
+                        ), "remove the command")
                 ))
                 .toList();
         EntryBrowserRequest request = EntryBrowserRequest.builder()
@@ -168,10 +170,10 @@ public final class EditorGui implements Listener {
                 .filter(filter)
                 .buttons(buttons)
                 .showBack(true)
-                .addButton(item(Material.ANVIL, "{good}Add Command", List.of(
+                .addButton(button(player, FoStyle.GOOD, Material.ANVIL, "Add Command", List.of(
                         "{white}Click to add a pattern.",
                         "{white}Examples: {theme}team chat{white}, {theme}team *"
-                )))
+                ), "add a command"))
                 .context(new CommandBrowserContext())
                 .build();
         EntryBrowserMenus.open(player, request);
@@ -188,47 +190,47 @@ public final class EditorGui implements Listener {
         holder.setInventory(inventory);
         fill(inventory);
 
-        inventory.setItem(10, toggleItem(Material.IRON_BARS, "Show Combat Wall", plugin.settings().worldGuardBorderEnabled()));
-        inventory.setItem(11, item(plugin.settings().worldGuardBorderCollisionMaterial(), "{theme}Combat Wall Block", List.of(
+        inventory.setItem(10, toggleItem(player, Material.IRON_BARS, "Show Combat Wall", plugin.settings().worldGuardBorderEnabled()));
+        inventory.setItem(11, button(player, FoStyle.THEME, plugin.settings().worldGuardBorderCollisionMaterial(), "Combat Wall Block", List.of(
                 "{white}Current: {theme}" + plugin.settings().worldGuardBorderCollisionMaterial().name(),
                 "{white}Click to choose block."
-        )));
-        inventory.setItem(12, toggleItem(Material.TINTED_GLASS, "Advanced Visuals", plugin.settings().worldGuardBorderAdvancedVisualsEnabled()));
-        inventory.setItem(13, item(Material.RED_DYE, "{theme}Visual Color", List.of(
+        ), "choose the wall block"));
+        inventory.setItem(12, toggleItem(player, Material.TINTED_GLASS, "Advanced Visuals", plugin.settings().worldGuardBorderAdvancedVisualsEnabled()));
+        inventory.setItem(13, button(player, FoStyle.THEME, Material.RED_DYE, "Visual Color", List.of(
                 "{white}Current: {theme}" + visibleColorValue(),
                 "{white}Click to edit."
-        )));
-        inventory.setItem(14, item(Material.SPYGLASS, "{theme}Visual Range", List.of(
+        ), "edit visual color"));
+        inventory.setItem(14, button(player, FoStyle.THEME, Material.SPYGLASS, "Visual Range", List.of(
                 "{white}Current: {theme}" + plugin.settings().worldGuardBorderVisualRange(),
                 "{white}Click to edit."
-        )));
-        inventory.setItem(15, item(Material.COMPASS, "{theme}Scan Radius", List.of(
+        ), "edit visual range"));
+        inventory.setItem(15, button(player, FoStyle.THEME, Material.COMPASS, "Scan Radius", List.of(
                 "{white}Current: {theme}" + plugin.settings().worldGuardBorderRadius(),
                 "{white}Click to edit."
-        )));
-        inventory.setItem(16, item(Material.SCAFFOLDING, "{theme}Combat Wall Height", List.of(
+        ), "edit scan radius"));
+        inventory.setItem(16, button(player, FoStyle.THEME, Material.SCAFFOLDING, "Combat Wall Height", List.of(
                 "{white}Current: {theme}" + plugin.settings().worldGuardBorderHeight(),
                 "{white}Click to edit."
-        )));
-        inventory.setItem(19, toggleItem(Material.FEATHER, "Empty Blocks Only", plugin.settings().worldGuardBorderOnlyAir()));
-        inventory.setItem(20, item(Material.HOPPER, "{theme}Combat Wall Cache", List.of(
+        ), "edit wall height"));
+        inventory.setItem(19, toggleItem(player, Material.FEATHER, "Empty Blocks Only", plugin.settings().worldGuardBorderOnlyAir()));
+        inventory.setItem(20, button(player, FoStyle.THEME, Material.HOPPER, "Combat Wall Cache", List.of(
                 "{white}Current: {theme}" + plugin.settings().worldGuardBorderCacheSeconds() + "s",
                 "{white}Click to edit."
-        )));
-        inventory.setItem(21, item(Material.PISTON, "{theme}Pushback Multiplier", List.of(
+        ), "edit wall cache"));
+        inventory.setItem(21, button(player, FoStyle.THEME, Material.PISTON, "Pushback Multiplier", List.of(
                 "{white}Current: {theme}" + NumberFormatters.money(plugin.settings().worldGuardBorderPushbackMultiplier()) + "x",
                 "{white}Click to edit."
-        )));
-        inventory.setItem(22, item(Material.ENDER_PEARL, "{theme}Pearl Impact Radius", List.of(
+        ), "edit pushback multiplier"));
+        inventory.setItem(22, button(player, FoStyle.THEME, Material.ENDER_PEARL, "Pearl Impact Radius", List.of(
                 "{white}Current: {theme}" + plugin.settings().worldGuardBorderPearlImpactRadius(),
                 "{white}Click to edit."
-        )));
-        inventory.setItem(23, item(Material.CLOCK, "{theme}Pearl Impact Duration", List.of(
+        ), "edit pearl impact radius"));
+        inventory.setItem(23, button(player, FoStyle.THEME, Material.CLOCK, "Pearl Impact Duration", List.of(
                 "{white}Current: {theme}" + plugin.settings().worldGuardBorderPearlImpactDurationTicks() + " ticks",
                 "{white}Click to edit."
-        )));
+        ), "edit pearl impact duration"));
 
-        inventory.setItem(BACK_SLOT, buttons.back());
+        inventory.setItem(BACK_SLOT, buttons.back(player));
         player.openInventory(inventory);
     }
 
@@ -899,15 +901,16 @@ public final class EditorGui implements Listener {
         }
     }
 
-    private ItemStack toggleItem(Material material, String name, boolean enabled) {
-        return item(material, (enabled ? "{good}" : "{bad}") + name, List.of(
+    private ItemStack toggleItem(Player player, Material material, String name, boolean enabled) {
+        return button(player, enabled ? FoStyle.GOOD : FoStyle.BAD, material, name, List.of(
                 "{white}State: " + (enabled ? "{good}Enabled" : "{bad}Disabled"),
                 "{white}Click to toggle."
-        ));
+        ), "toggle " + name.toLowerCase(Locale.ROOT));
     }
 
-    private ItemStack pearlCooldownModeItem() {
+    private ItemStack pearlCooldownModeItem(Player player) {
         return EditorItemFactory.cycle(
+                player,
                 plugin.messages(),
                 "Pearl Cooldown",
                 plugin.settings().pearlCooldownMode().configValue(),
@@ -928,6 +931,14 @@ public final class EditorGui implements Listener {
             stack.setItemMeta(meta);
         }
         return stack;
+    }
+
+    private ItemStack button(Player player, String color, Material material, String name, List<String> information, String action) {
+        String renderedName = plugin.messages().renderTemplate(name, Map.of());
+        List<String> renderedInformation = information == null ? List.of() : information.stream()
+                .map(line -> plugin.messages().renderTemplate(line, Map.of()))
+                .toList();
+        return EditorItemFactory.button(player, material, color, renderedName, renderedInformation, action);
     }
 
     private String normalizeCommand(String command) {
@@ -994,7 +1005,9 @@ public final class EditorGui implements Listener {
 
     private void warnNativeFallback(Player player) {
         NativeDialogAvailability availability = plugin.core().nativeDialogs().availability();
-        if (!availability.configEnabled() || !plugin.core().nativeDialogs().warnOnFallback() || availability.canUseNativeDialogs()) {
+        if (!availability.configEnabled()
+                || !plugin.core().nativeDialogs().warnOnFallback()
+                || plugin.core().nativeDialogs().canUseNativeDialogs(player)) {
             return;
         }
         if (warnedNativeFallback.add(player.getUniqueId())) {
