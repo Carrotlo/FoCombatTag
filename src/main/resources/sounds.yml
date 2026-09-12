@@ -128,6 +128,12 @@ combat.pearl-cooldown:
   category: PLAYERS
   volume: 0.8
   pitch: 1.4
+combat.wind-charge-cooldown:
+  enabled: true
+  sound: BLOCK_CRAFTER_FAIL
+  category: PLAYERS
+  volume: 0.8
+  pitch: 1.4
 elytra.stored:
   enabled: true
   sound: BLOCK_VAULT_INSERT_ITEM
@@ -140,4 +146,3 @@ elytra.claimed:
   category: PLAYERS
   volume: 0.7
   pitch: 1.0
-

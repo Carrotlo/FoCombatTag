@@ -15,6 +15,12 @@ combat:
   pearl-cooldown:
     mode: never
     seconds: 5
+  # If true, launching a wind charge while already combat tagged resets the combat timer.
+  wind-charge-extends-combat: false
+  # Optional wind charge cooldown. Modes: always, when-tagged, never.
+  wind-charge-cooldown:
+    mode: never
+    seconds: 5
   # Empty list means every world is enabled. Example: [world, world_nether]
   enabled-worlds: []
   # Worlds where combat tag never starts. Example: [spawn]

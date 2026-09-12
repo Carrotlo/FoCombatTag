@@ -168,7 +168,7 @@ public final class FoCombatTag extends JavaPlugin {
     private void migrateSprites() {
         messages.migrateToVersion(core.migrations(), 1, config -> {
             boolean changed = false;
-            changed |= FoMessageService.addMissingToken(config, "tokens.prefix", ":shield:", null);
+            changed |= FoMessageService.addMissingToken(config, "tokens.prefix", ":iron_sword:", null);
             changed |= FoMessageService.addMissingToken(config, "reload-complete", ":emerald:");
             changed |= FoMessageService.addMissingToken(config, "reload-failed", ":redstone:");
             changed |= FoMessageService.addMissingToken(config, "combat-tagged", ":clock:");
@@ -191,6 +191,15 @@ public final class FoCombatTag extends JavaPlugin {
         });
         messages.migrateToVersion(core.migrations(), 3, config -> {
             FoMessageService.addMissingToken(config, "actionbar-tagged", ":clock:", null);
+            return true;
+        });
+        messages.migrateToVersion(core.migrations(), 4, config -> {
+            String prefix = config.getString("tokens.prefix");
+            String duplicateDefaultPrefix = ":shield: :iron_sword: {theme}FoCombatTag &8\u00bb {muted}";
+            String legacyOrderDefaultPrefix = ":iron_sword: :shield: {theme}FoCombatTag &8\u00bb {muted}";
+            if (duplicateDefaultPrefix.equals(prefix) || legacyOrderDefaultPrefix.equals(prefix)) {
+                config.set("tokens.prefix", ":iron_sword: {theme}FoCombatTag &8\u00bb {muted}");
+            }
             return true;
         });
     }

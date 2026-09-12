@@ -29,6 +29,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.entity.EnderPearl;
+import org.bukkit.entity.WindCharge;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.projectiles.ProjectileSource;
@@ -43,10 +44,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class PlayerStateListener implements Listener {
     private static final int PEARL_GUARD_MAX_TICKS = 20 * 20;
     private static final long PEARL_COOLDOWN_SOUND_INTERVAL_MILLIS = 350L;
+    private static final long WIND_CHARGE_COOLDOWN_SOUND_INTERVAL_MILLIS = 350L;
 
     private final FoCombatTag plugin;
     private final Map<UUID, Long> pearlCooldowns = new ConcurrentHashMap<>();
     private final Map<UUID, Long> pearlCooldownSoundTimes = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> windChargeCooldowns = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> windChargeCooldownSoundTimes = new ConcurrentHashMap<>();
     private final Map<UUID, TrackedPearl> trackedPearls = new ConcurrentHashMap<>();
     private final Set<UUID> queuedBorderRenders = ConcurrentHashMap.newKeySet();
     private BukkitTask pearlGuardTask;
@@ -205,6 +209,7 @@ public final class PlayerStateListener implements Listener {
             return;
         }
         enforcePearlCooldown(event, player);
+        enforceWindChargeCooldown(event, player);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -219,15 +224,20 @@ public final class PlayerStateListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onProjectileLaunch(ProjectileLaunchEvent event) {
-        if (!(event.getEntity() instanceof EnderPearl pearl)) {
+        if (!(event.getEntity() instanceof EnderPearl) && !(event.getEntity() instanceof WindCharge)) {
             return;
         }
-        ProjectileSource shooter = pearl.getShooter();
+        ProjectileSource shooter = event.getEntity().getShooter();
         if (!(shooter instanceof Player player)) {
             return;
         }
-        startPearlCooldown(player);
-        trackBlockedPearl(pearl, player);
+        if (event.getEntity() instanceof EnderPearl pearl) {
+            startPearlCooldown(player);
+            trackBlockedPearl(pearl, player);
+        } else if (event.getEntity() instanceof WindCharge) {
+            startWindChargeCooldown(player);
+            plugin.combatTags().refreshFromWindCharge(player);
+        }
     }
 
     @EventHandler
@@ -248,6 +258,8 @@ public final class PlayerStateListener implements Listener {
         plugin.combatTags().untag(player, CombatTagRemoveReason.QUIT, false);
         pearlCooldowns.remove(player.getUniqueId());
         pearlCooldownSoundTimes.remove(player.getUniqueId());
+        windChargeCooldowns.remove(player.getUniqueId());
+        windChargeCooldownSoundTimes.remove(player.getUniqueId());
         queuedBorderRenders.remove(player.getUniqueId());
         removeTrackedPearls(player.getUniqueId());
     }
@@ -284,6 +296,7 @@ public final class PlayerStateListener implements Listener {
 
     private void clearDeathTransientState(Player player) {
         pearlCooldowns.remove(player.getUniqueId());
+        windChargeCooldowns.remove(player.getUniqueId());
         queuedBorderRenders.remove(player.getUniqueId());
         removeTrackedPearls(player.getUniqueId());
     }
@@ -294,9 +307,11 @@ public final class PlayerStateListener implements Listener {
             if (template != null && !template.contains("{prefix}")) {
                 template = "{prefix}" + template;
             }
-            Bukkit.broadcastMessage(plugin.messages().renderTemplate(template, Map.of(
-                    "player", player.getName()
-            )));
+            Map<String, String> placeholders = Map.of("player", player.getName());
+            for (Player recipient : Bukkit.getOnlinePlayers()) {
+                plugin.messages().sendTemplate(recipient, template, placeholders);
+            }
+            Bukkit.getConsoleSender().sendMessage(plugin.messages().renderTemplate(template, placeholders));
         }
         for (String command : plugin.settings().combatLogoutConsoleCommands()) {
             String parsed = CommandPlaceholders.applyPlayer(command, player);
@@ -397,6 +412,32 @@ public final class PlayerStateListener implements Listener {
         }
     }
 
+    private void enforceWindChargeCooldown(PlayerInteractEvent event, Player player) {
+        if (!windChargeCooldownApplies(player)) {
+            return;
+        }
+        ItemStack item = event.getItem();
+        if (item == null || item.getType() != Material.WIND_CHARGE) {
+            return;
+        }
+        if (event.useItemInHand() == Event.Result.DENY) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long availableAt = windChargeCooldowns.getOrDefault(player.getUniqueId(), 0L);
+        if (availableAt > now) {
+            event.setCancelled(true);
+            event.setUseItemInHand(Event.Result.DENY);
+            long remainingSeconds = Math.max(1L, (availableAt - now + 999L) / 1000L);
+            plugin.messages().send(player, "wind-charge-cooldown", Map.of("{seconds}", String.valueOf(remainingSeconds)));
+            long lastSound = windChargeCooldownSoundTimes.getOrDefault(player.getUniqueId(), 0L);
+            if (now - lastSound >= WIND_CHARGE_COOLDOWN_SOUND_INTERVAL_MILLIS) {
+                windChargeCooldownSoundTimes.put(player.getUniqueId(), now);
+                plugin.sounds().play(player, "combat.wind-charge-cooldown");
+            }
+        }
+    }
+
     private void startPearlCooldown(Player player) {
         if (!pearlCooldownApplies(player)) {
             return;
@@ -408,6 +449,21 @@ public final class PlayerStateListener implements Listener {
         plugin.core().scheduler().runForPlayer(player, () -> {
             if (player.isOnline() && pearlCooldownApplies(player)) {
                 player.setCooldown(Material.ENDER_PEARL, cooldownTicks);
+            }
+        });
+    }
+
+    private void startWindChargeCooldown(Player player) {
+        if (!windChargeCooldownApplies(player)) {
+            return;
+        }
+        int cooldownTicks = plugin.settings().windChargeCooldownSeconds() * 20;
+        long durationMillis = plugin.settings().windChargeCooldownSeconds() * 1000L;
+        windChargeCooldowns.put(player.getUniqueId(), System.currentTimeMillis() + durationMillis);
+        player.setCooldown(Material.WIND_CHARGE, cooldownTicks);
+        plugin.core().scheduler().runForPlayer(player, () -> {
+            if (player.isOnline() && windChargeCooldownApplies(player)) {
+                player.setCooldown(Material.WIND_CHARGE, cooldownTicks);
             }
         });
     }
@@ -516,6 +572,14 @@ public final class PlayerStateListener implements Listener {
 
     private boolean pearlCooldownApplies(Player player) {
         return switch (plugin.settings().pearlCooldownMode()) {
+            case ALWAYS -> true;
+            case WHEN_TAGGED -> plugin.combatTags().isTagged(player);
+            case NEVER -> false;
+        };
+    }
+
+    private boolean windChargeCooldownApplies(Player player) {
+        return switch (plugin.settings().windChargeCooldownMode()) {
             case ALWAYS -> true;
             case WHEN_TAGGED -> plugin.combatTags().isTagged(player);
             case NEVER -> false;

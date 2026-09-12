@@ -24,6 +24,9 @@ public record Settings(
         boolean pearlExtendsCombat,
         PearlCooldownMode pearlCooldownMode,
         int pearlCooldownSeconds,
+        boolean windChargeExtendsCombat,
+        WindChargeCooldownMode windChargeCooldownMode,
+        int windChargeCooldownSeconds,
         Set<String> enabledWorlds,
         Set<String> disabledWorlds,
         Set<String> disabledWorldGuardRegions,
@@ -55,6 +58,7 @@ public record Settings(
         Material borderCollisionMaterial = parseMaterial(plugin, getString(config, defaults, "worldguard.border.collision-material", "BARRIER"), Material.BARRIER);
         Color borderVisualColor = parseColor(plugin, getString(config, defaults, "worldguard.border.visual-color", "#ff3d5a"), Color.fromRGB(255, 61, 90));
         PearlCooldownMode pearlCooldownMode = getPearlCooldownMode(plugin, config, defaults);
+        WindChargeCooldownMode windChargeCooldownMode = getWindChargeCooldownMode(plugin, config, defaults);
         return new Settings(
                 clamp(getInt(config, defaults, "combat.duration-seconds", 15), 1, 3600),
                 getBoolean(config, defaults, "combat.kill-on-logout", true),
@@ -63,6 +67,9 @@ public record Settings(
                 getBoolean(config, defaults, "combat.pearl-extends-combat", false),
                 pearlCooldownMode,
                 clamp(getInt(config, defaults, "combat.pearl-cooldown.seconds", 5), 1, 3600),
+                getBoolean(config, defaults, "combat.wind-charge-extends-combat", false),
+                windChargeCooldownMode,
+                clamp(getInt(config, defaults, "combat.wind-charge-cooldown.seconds", 5), 1, 3600),
                 lowerStrings(config, defaults, "combat.enabled-worlds"),
                 lowerStrings(config, defaults, "combat.disabled-worlds"),
                 lowerStrings(config, defaults, "combat.disabled-worldguard-regions"),
@@ -108,6 +115,9 @@ public record Settings(
             changed = true;
         }
         changed |= setMissing(config, "combat.pearl-extends-combat", false);
+        changed |= setMissing(config, "combat.wind-charge-extends-combat", false);
+        changed |= setMissing(config, "combat.wind-charge-cooldown.mode", "never");
+        changed |= setMissing(config, "combat.wind-charge-cooldown.seconds", 5);
 
         String legacyPath = "combat.pearl-cooldown.enabled";
         if (config.isSet(legacyPath) && !config.isSet("combat.pearl-cooldown.mode")) {
@@ -223,6 +233,23 @@ public record Settings(
         }
         plugin.logWarning("Invalid combat.pearl-cooldown.mode '" + value + "', using never.");
         return PearlCooldownMode.NEVER;
+    }
+
+    private static WindChargeCooldownMode getWindChargeCooldownMode(FoCombatTag plugin, FileConfiguration config, FileConfiguration defaults) {
+        String path = "combat.wind-charge-cooldown.mode";
+        if (config.isSet(path)) {
+            return parseWindChargeCooldownMode(plugin, config.getString(path));
+        }
+        return parseWindChargeCooldownMode(plugin, defaults.getString(path, "never"));
+    }
+
+    private static WindChargeCooldownMode parseWindChargeCooldownMode(FoCombatTag plugin, String value) {
+        WindChargeCooldownMode mode = WindChargeCooldownMode.fromConfig(value);
+        if (mode != null) {
+            return mode;
+        }
+        plugin.logWarning("Invalid combat.wind-charge-cooldown.mode '" + value + "', using never.");
+        return WindChargeCooldownMode.NEVER;
     }
 
     private static Material parseMaterial(FoCombatTag plugin, String value, Material fallback) {
@@ -393,6 +420,43 @@ public record Settings(
         }
 
         public static PearlCooldownMode fromConfig(String value) {
+            if (value == null) {
+                return null;
+            }
+            String normalized = value.trim().toLowerCase(Locale.ROOT)
+                    .replace('_', '-')
+                    .replace(' ', '-');
+            return switch (normalized) {
+                case "always", "enabled", "true", "on" -> ALWAYS;
+                case "when-tagged", "tagged", "combat", "combat-tagged" -> WHEN_TAGGED;
+                case "never", "disabled", "false", "off", "none" -> NEVER;
+                default -> null;
+            };
+        }
+    }
+
+    public enum WindChargeCooldownMode {
+        ALWAYS("always", "Always"),
+        WHEN_TAGGED("when-tagged", "When Tagged"),
+        NEVER("never", "Never");
+
+        private final String configValue;
+        private final String displayName;
+
+        WindChargeCooldownMode(String configValue, String displayName) {
+            this.configValue = configValue;
+            this.displayName = displayName;
+        }
+
+        public String configValue() {
+            return configValue;
+        }
+
+        public String displayName() {
+            return displayName;
+        }
+
+        public static WindChargeCooldownMode fromConfig(String value) {
             if (value == null) {
                 return null;
             }

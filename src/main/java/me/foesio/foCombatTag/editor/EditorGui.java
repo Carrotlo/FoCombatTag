@@ -33,6 +33,7 @@ import me.foesio.core.selector.TriStateSelectionRequest;
 import me.foesio.core.selector.TriStateSelectionState;
 import me.foesio.foCombatTag.FoCombatTag;
 import me.foesio.foCombatTag.config.Settings.PearlCooldownMode;
+import me.foesio.foCombatTag.config.Settings.WindChargeCooldownMode;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -69,6 +70,11 @@ public final class EditorGui implements Listener {
             new CycleOption(PearlCooldownMode.WHEN_TAGGED.configValue(), PearlCooldownMode.WHEN_TAGGED.displayName()),
             new CycleOption(PearlCooldownMode.NEVER.configValue(), PearlCooldownMode.NEVER.displayName())
     );
+    private static final List<CycleOption> WIND_CHARGE_COOLDOWN_OPTIONS = List.of(
+            new CycleOption(WindChargeCooldownMode.ALWAYS.configValue(), WindChargeCooldownMode.ALWAYS.displayName()),
+            new CycleOption(WindChargeCooldownMode.WHEN_TAGGED.configValue(), WindChargeCooldownMode.WHEN_TAGGED.displayName()),
+            new CycleOption(WindChargeCooldownMode.NEVER.configValue(), WindChargeCooldownMode.NEVER.displayName())
+    );
 
     private final FoCombatTag plugin;
     private final GuiButtonConfig buttons = GuiButtonConfig.defaults();
@@ -86,7 +92,7 @@ public final class EditorGui implements Listener {
 
     private void openMain(Player player) {
         EditorHolder holder = new EditorHolder(View.MAIN, 0);
-        Inventory inventory = Bukkit.createInventory(holder, SIZE, GuiTitles.format("Combat Tag Editor"));
+        Inventory inventory = Bukkit.createInventory(holder, SIZE, GuiTitles.format("ᴄᴏᴍʙᴀᴛ ᴛᴀɢ ᴇᴅɪᴛᴏʀ"));
         holder.setInventory(inventory);
         fill(inventory);
 
@@ -132,6 +138,19 @@ public final class EditorGui implements Listener {
                         "{white}resets the combat timer.",
                         "{white}Click to toggle."
                 ), "toggle pearl combat extension"));
+        inventory.setItem(23, windChargeCooldownModeItem(player));
+        inventory.setItem(24, button(player, FoStyle.THEME, Material.CLOCK, "Wind Charge Cooldown Timer", List.of(
+                "{white}Current: {theme}" + plugin.settings().windChargeCooldownSeconds() + "s",
+                "{white}Click to edit."
+        ), "edit wind charge cooldown"));
+        boolean windChargeExtends = plugin.settings().windChargeExtendsCombat();
+        inventory.setItem(25, button(player, windChargeExtends ? FoStyle.GOOD : FoStyle.BAD, Material.WIND_CHARGE,
+                "Wind Charges Extend Combat", List.of(
+                        "{white}State: " + (windChargeExtends ? "{good}Enabled" : "{bad}Disabled"),
+                        "{white}Launching a wind charge while tagged",
+                        "{white}resets the combat timer.",
+                        "{white}Click to toggle."
+                ), "toggle wind charge combat extension"));
         player.openInventory(inventory);
     }
 
@@ -164,7 +183,7 @@ public final class EditorGui implements Listener {
                 ))
                 .toList();
         EntryBrowserRequest request = EntryBrowserRequest.builder()
-                .title("Allowed Commands")
+                .title("ᴀʟʟᴏᴡᴇᴅ ᴄᴏᴍᴍᴀɴᴅꜱ")
                 .entries(entries)
                 .page(page)
                 .filter(filter)
@@ -186,7 +205,7 @@ public final class EditorGui implements Listener {
 
     private void openCombatWallSettings(Player player) {
         EditorHolder holder = new EditorHolder(View.COMBAT_WALL_SETTINGS, 0);
-        Inventory inventory = Bukkit.createInventory(holder, SIZE, GuiTitles.format("Combat Wall Settings"));
+        Inventory inventory = Bukkit.createInventory(holder, SIZE, GuiTitles.format("ᴄᴏᴍʙᴀᴛ ᴡᴀʟʟ ꜱᴇᴛᴛɪɴɢꜱ"));
         holder.setInventory(inventory);
         fill(inventory);
 
@@ -361,6 +380,9 @@ public final class EditorGui implements Listener {
             case 20 -> cyclePearlCooldownMode(player);
             case 21 -> startNumberPrompt(player, PromptType.PEARL_COOLDOWN);
             case 22 -> toggle(player, "combat.pearl-extends-combat", "Pearl combat extension");
+            case 23 -> cycleWindChargeCooldownMode(player);
+            case 24 -> startNumberPrompt(player, PromptType.WIND_CHARGE_COOLDOWN);
+            case 25 -> toggle(player, "combat.wind-charge-extends-combat", "Wind charge combat extension");
             default -> {
             }
         }
@@ -546,6 +568,7 @@ public final class EditorGui implements Listener {
             case BORDER_CACHE -> String.valueOf(plugin.settings().worldGuardBorderCacheSeconds());
             case PUSHBACK_MULTIPLIER -> NumberFormatters.money(plugin.settings().worldGuardBorderPushbackMultiplier());
             case PEARL_COOLDOWN -> String.valueOf(plugin.settings().pearlCooldownSeconds());
+            case WIND_CHARGE_COOLDOWN -> String.valueOf(plugin.settings().windChargeCooldownSeconds());
             case BORDER_VISUAL_RANGE -> String.valueOf(plugin.settings().worldGuardBorderVisualRange());
             case BORDER_RADIUS -> String.valueOf(plugin.settings().worldGuardBorderRadius());
             case BORDER_HEIGHT -> String.valueOf(plugin.settings().worldGuardBorderHeight());
@@ -655,6 +678,36 @@ public final class EditorGui implements Listener {
         }
     }
 
+    private void cycleWindChargeCooldownMode(Player player) {
+        String nextValue = CycleOptions.nextValue(
+                plugin.settings().windChargeCooldownMode().configValue(),
+                WIND_CHARGE_COOLDOWN_OPTIONS
+        );
+        WindChargeCooldownMode next = WindChargeCooldownMode.fromConfig(nextValue);
+        if (next == null) {
+            plugin.editorSounds().error(player);
+            plugin.messages().send(player, "editor-save-failed", Map.of("{error}", "Invalid wind charge cooldown option"));
+            openMain(player);
+            return;
+        }
+        try {
+            FileConfiguration config = plugin.getConfig();
+            config.set("combat.wind-charge-cooldown.mode", next.configValue());
+            plugin.saveConfig();
+            plugin.reloadPluginQuietly();
+            plugin.editorSounds().cycle(player);
+            plugin.messages().send(player, "editor-saved", Map.of(
+                    "{setting}", "Wind charge cooldown",
+                    "{value}", next.displayName()
+            ));
+            openMain(player);
+        } catch (RuntimeException exception) {
+            plugin.logError("Editor save failed: " + exception.getMessage(), exception);
+            plugin.editorSounds().error(player);
+            plugin.messages().send(player, "editor-save-failed", Map.of("{error}", exception.getMessage()));
+        }
+    }
+
     private void reopenPromptPage(Player player, Prompt prompt) {
         if (prompt.type() == PromptType.ADD_COMMAND) {
             openCommands(player, 0);
@@ -684,7 +737,7 @@ public final class EditorGui implements Listener {
     private MaterialChooserRequest borderMaterialRequest(int page, String filter) {
         Material current = plugin.settings().worldGuardBorderCollisionMaterial();
         return MaterialChooserRequest.builder()
-                .title("Combat Wall Block")
+                .title("ᴄᴏᴍʙᴀᴛ ᴡᴀʟʟ ʙʟᴏᴄᴋ")
                 .mode(MaterialChooserMode.SINGLE_SELECT)
                 .availableMaterials(MaterialTypes.allBlocks())
                 .selectedMaterials(Set.of(current))
@@ -817,7 +870,7 @@ public final class EditorGui implements Listener {
             states.put(region, TriStateSelectionState.ENABLED);
         }
         return TriStateSelectionRequest.builder()
-                .title("Enclosed Regions")
+                .title("ᴇɴᴄʟᴏꜱᴇᴅ ʀᴇɢɪᴏɴꜱ")
                 .entries(entries)
                 .states(states)
                 .cycleOrder(List.of(TriStateSelectionState.NEUTRAL, TriStateSelectionState.ENABLED))
@@ -918,6 +971,16 @@ public final class EditorGui implements Listener {
         );
     }
 
+    private ItemStack windChargeCooldownModeItem(Player player) {
+        return EditorItemFactory.cycle(
+                player,
+                plugin.messages(),
+                "Wind Charge Cooldown",
+                plugin.settings().windChargeCooldownMode().configValue(),
+                WIND_CHARGE_COOLDOWN_OPTIONS
+        );
+    }
+
     private ItemStack item(Material material, String name, List<String> lore) {
         ItemStack stack = new ItemStack(material);
         ItemMeta meta = stack.getItemMeta();
@@ -1007,7 +1070,7 @@ public final class EditorGui implements Listener {
         NativeDialogAvailability availability = plugin.core().nativeDialogs().availability();
         if (!availability.configEnabled()
                 || !plugin.core().nativeDialogs().warnOnFallback()
-                || plugin.core().nativeDialogs().canUseNativeDialogs(player)) {
+                || plugin.core().nativeDialogs().canUseNativeDialogs()) {
             return;
         }
         if (warnedNativeFallback.add(player.getUniqueId())) {
@@ -1121,6 +1184,7 @@ public final class EditorGui implements Listener {
         BORDER_CACHE("Combat wall cache", "worldguard.border.cache-seconds", 0.0D, 60.0D, "s", InputKind.INTEGER, View.COMBAT_WALL_SETTINGS, ""),
         PUSHBACK_MULTIPLIER("Pushback multiplier", "worldguard.border.pushback-multiplier", 0.0D, 3.0D, "x", InputKind.DECIMAL, View.COMBAT_WALL_SETTINGS, ""),
         PEARL_COOLDOWN("Pearl cooldown", "combat.pearl-cooldown.seconds", 1.0D, 3600.0D, "s", InputKind.INTEGER, View.MAIN, ""),
+        WIND_CHARGE_COOLDOWN("Wind charge cooldown", "combat.wind-charge-cooldown.seconds", 1.0D, 3600.0D, "s", InputKind.INTEGER, View.MAIN, ""),
         BORDER_VISUAL_COLOR("Visual color", "worldguard.border.visual-color", 0.0D, 0.0D, "", InputKind.COLOR, View.COMBAT_WALL_SETTINGS, "Use #RRGGBB or names like red, blue, green, yellow, purple."),
         BORDER_VISUAL_RANGE("Visual range", "worldguard.border.visual-range", 1.0D, 16.0D, "", InputKind.INTEGER, View.COMBAT_WALL_SETTINGS, ""),
         BORDER_RADIUS("Scan radius", "worldguard.border.radius", 2.0D, 16.0D, "", InputKind.INTEGER, View.COMBAT_WALL_SETTINGS, ""),

@@ -105,6 +105,13 @@ public final class CombatTagService {
         return tag(player, null, "Ender Pearl", CombatTagCause.PEARL, plugin.settings().combatDurationSeconds());
     }
 
+    public boolean refreshFromWindCharge(Player player) {
+        if (!plugin.settings().windChargeExtendsCombat() || !isTagged(player)) {
+            return false;
+        }
+        return tag(player, null, "Wind Charge", CombatTagCause.WIND_CHARGE, plugin.settings().combatDurationSeconds());
+    }
+
     public int tagAll(Collection<? extends Player> players) {
         int count = 0;
         for (Player player : players) {
