@@ -150,7 +150,7 @@ public final class CombatListener implements Listener {
     }
 
     private boolean isTrackedExplosiveBlock(Material material) {
-        return material == Material.RESPAWN_ANCHOR || material.name().endsWith("_BED");
+        return material == Material.RESPAWN_ANCHOR || isExplosiveBed(material);
     }
 
     private boolean canExplodeByUse(Material material, World world) {
@@ -160,7 +160,12 @@ public final class CombatListener implements Listener {
         if (material == Material.RESPAWN_ANCHOR) {
             return world.getEnvironment() != World.Environment.NETHER;
         }
-        return material.name().endsWith("_BED") && world.getEnvironment() != World.Environment.NORMAL;
+        return isExplosiveBed(material) && world.getEnvironment() != World.Environment.NORMAL;
+    }
+
+    private boolean isExplosiveBed(Material material) {
+        // The 26.3 straw bed breaks in the Nether and End instead of exploding.
+        return material.name().endsWith("_BED") && !material.name().equals("STRAW_BED");
     }
 
     private void cleanupBlockTriggers(long now) {
