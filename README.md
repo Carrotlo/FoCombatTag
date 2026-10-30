@@ -76,7 +76,7 @@ Main config areas: `combat`, `actionbar`, `combat-logout`, `native-dialogs`, `co
 <details>
 <summary><strong>Developer API</strong></summary>
 
-Use `FoCombatTagApi` to inspect, apply, or remove tags. `CombatTagApplyEvent` and `CombatTagRemoveEvent` expose lifecycle changes.
+Use `FoCombatTagApi` to inspect, apply, or remove tags. Bukkit events expose tag attempts, final vetoes, completed tags, logout penalties, command blocks, and elytra-vault changes. See [public API source](src/main/java/me/foesio/foCombatTag/api).
 
 ~~~java
 FoCombatTagApi.get().ifPresent(api ->

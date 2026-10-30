@@ -1,6 +1,8 @@
 package me.foesio.foCombatTag.listener;
 
 import me.foesio.foCombatTag.FoCombatTag;
+import me.foesio.foCombatTag.api.event.CombatTaggedCommandBlockEvent;
+import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -32,6 +34,11 @@ public final class CommandBlockListener implements Listener {
             return;
         }
         if (plugin.settings().isCommandAllowedWhileTagged(event.getMessage())) {
+            return;
+        }
+        CombatTaggedCommandBlockEvent blockEvent = new CombatTaggedCommandBlockEvent(event.getPlayer(), event.getMessage());
+        Bukkit.getPluginManager().callEvent(blockEvent);
+        if (blockEvent.isCancelled()) {
             return;
         }
         event.setCancelled(true);

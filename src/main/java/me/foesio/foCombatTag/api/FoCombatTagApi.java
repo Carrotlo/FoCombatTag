@@ -73,6 +73,11 @@ public final class FoCombatTagApi {
         return plugin.combatTags().apiSnapshot();
     }
 
+    /** Returns a snapshot of an active tag, or empty when none exists. Call from the server gameplay thread. */
+    public Optional<CombatTagDetails> getTag(UUID playerId) {
+        return plugin.combatTags().getTag(playerId);
+    }
+
     public boolean isNoPvpRegion(Location location) {
         return plugin.worldGuardHook().isNoPvp(location);
     }

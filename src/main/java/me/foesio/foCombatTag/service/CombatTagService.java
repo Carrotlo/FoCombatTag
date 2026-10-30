@@ -3,9 +3,12 @@ package me.foesio.foCombatTag.service;
 import me.foesio.core.dialog.DialogIcons;
 import me.foesio.foCombatTag.FoCombatTag;
 import me.foesio.foCombatTag.api.CombatTagCause;
+import me.foesio.foCombatTag.api.CombatTagDetails;
 import me.foesio.foCombatTag.api.CombatTagInfo;
 import me.foesio.foCombatTag.api.CombatTagRemoveReason;
 import me.foesio.foCombatTag.api.event.CombatTagApplyEvent;
+import me.foesio.foCombatTag.api.event.CombatTagAppliedEvent;
+import me.foesio.foCombatTag.api.event.CombatTagCommitEvent;
 import me.foesio.foCombatTag.api.event.CombatTagRemoveEvent;
 import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.TextComponent;
@@ -20,6 +23,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.UUID;
@@ -241,6 +245,23 @@ public final class CombatTagService {
                 .toList();
     }
 
+    public Optional<CombatTagDetails> getTag(UUID playerId) {
+        TagEntry entry = tags.get(playerId);
+        long now = System.currentTimeMillis();
+        if (entry == null || entry.expiresAtMillis() <= now) {
+            return Optional.empty();
+        }
+        return Optional.of(details(entry, now));
+    }
+
+    private CombatTagDetails details(TagEntry entry, long now) {
+        boolean hasOpponent = entry.opponentId() != null;
+        return new CombatTagDetails(entry.playerId(), entry.playerName(), entry.opponentId(),
+                hasOpponent ? entry.opponentName() : null,
+                hasOpponent ? null : entry.opponentName(),
+                entry.expiresAtMillis(), remainingSeconds(entry, now), entry.cause());
+    }
+
     private boolean tag(Player player, UUID opponentId, String opponentName, CombatTagCause cause, int durationSeconds) {
         if (player.isDead() || !player.isOnline() || player.getHealth() <= 0.0D) {
             return false;
@@ -248,8 +269,9 @@ public final class CombatTagService {
         if (!isTaggable(player.getLocation())) {
             return false;
         }
+        UUID playerId = player.getUniqueId();
         long now = System.currentTimeMillis();
-        TagEntry previous = tags.get(player.getUniqueId());
+        TagEntry previous = tags.get(playerId);
         boolean wasTagged = previous != null && previous.expiresAtMillis() > now;
         CombatTagApplyEvent event = new CombatTagApplyEvent(
                 player,
@@ -259,16 +281,29 @@ public final class CombatTagService {
                 wasTagged
         );
         Bukkit.getPluginManager().callEvent(event);
-        if (event.isCancelled()) {
+        if (event.isCancelled() || tags.get(playerId) != previous) {
+            return false;
+        }
+        CombatTagCommitEvent commitEvent = new CombatTagCommitEvent(player, opponentId, opponentName,
+                cause, event.getDurationSeconds(), wasTagged);
+        Bukkit.getPluginManager().callEvent(commitEvent);
+        if (commitEvent.isCancelled() || tags.get(playerId) != previous || player.isDead() || !player.isOnline()
+                || player.getHealth() <= 0.0D || !isTaggable(player.getLocation())) {
             return false;
         }
 
+        long committedAt = System.currentTimeMillis();
         long durationMillis = event.getDurationSeconds() * 1000L;
-        UUID playerId = player.getUniqueId();
-        TagEntry entry = new TagEntry(playerId, player.getName(), opponentId, opponentName, now + durationMillis, cause, tagVersions.incrementAndGet());
+        TagEntry entry = new TagEntry(playerId, player.getName(), opponentId, opponentName,
+                committedAt + durationMillis, cause, tagVersions.incrementAndGet());
         tags.put(playerId, entry);
         lastActionbarMessages.remove(playerId);
-        scheduleRuntimeWork(entry, now, false);
+        scheduleRuntimeWork(entry, committedAt, false);
+        CombatTagDetails applied = details(entry, committedAt);
+        Bukkit.getPluginManager().callEvent(new CombatTagAppliedEvent(player, applied, wasTagged));
+        if (tags.get(playerId) != entry) {
+            return true;
+        }
         if (!wasTagged) {
             plugin.messages().send(player, "combat-tagged", Map.of("{seconds}", String.valueOf(event.getDurationSeconds())));
             plugin.sounds().play(player, "combat.tagged");

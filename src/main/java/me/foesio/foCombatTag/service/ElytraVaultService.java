@@ -3,6 +3,8 @@ package me.foesio.foCombatTag.service;
 import me.foesio.core.config.ResourceFiles;
 import me.foesio.core.item.FoItemStacks;
 import me.foesio.foCombatTag.FoCombatTag;
+import me.foesio.foCombatTag.api.event.ElytraVaultClaimEvent;
+import me.foesio.foCombatTag.api.event.ElytraVaultStoreEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -66,7 +68,8 @@ public final class ElytraVaultService {
         List<ItemStack> items = items(playerId);
         items.add(FoItemStacks.cloneItem(item));
         setItems(playerId, player.getName(), items);
-        save();
+        boolean persisted = save();
+        Bukkit.getPluginManager().callEvent(new ElytraVaultStoreEvent(player, item, items.size(), persisted));
         plugin.messages().send(player, "elytra-vault-stored", Map.of(
                 "{count}", String.valueOf(items.size())
         ));
@@ -81,9 +84,13 @@ public final class ElytraVaultService {
         }
 
         int claimed = 0;
+        int transferredItems = 0;
         List<ItemStack> remaining = new ArrayList<>();
         for (ItemStack item : stored) {
+            int originalAmount = item.getAmount();
             Map<Integer, ItemStack> leftovers = player.getInventory().addItem(FoItemStacks.cloneItem(item));
+            int leftAmount = leftovers.values().stream().mapToInt(ItemStack::getAmount).sum();
+            transferredItems += Math.max(0, originalAmount - leftAmount);
             if (leftovers.isEmpty()) {
                 claimed++;
                 continue;
@@ -92,8 +99,11 @@ public final class ElytraVaultService {
         }
 
         setItems(playerId, player.getName(), remaining);
-        save();
+        boolean persisted = save();
         player.updateInventory();
+        if (transferredItems > 0) {
+            Bukkit.getPluginManager().callEvent(new ElytraVaultClaimEvent(player, transferredItems, remaining.size(), persisted));
+        }
         return new ClaimResult(claimed, remaining.size());
     }
 
@@ -134,11 +144,13 @@ public final class ElytraVaultService {
         return "players." + playerId;
     }
 
-    private void save() {
+    private boolean save() {
         try {
             vault.save(file);
+            return true;
         } catch (IOException exception) {
             plugin.logWarning("Failed to save elytra vault: " + exception.getMessage());
+            return false;
         }
     }
 

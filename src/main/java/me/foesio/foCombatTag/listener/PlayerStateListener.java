@@ -4,6 +4,7 @@ import me.foesio.core.command.CommandPlaceholders;
 import me.foesio.core.item.FoItemStacks;
 import me.foesio.foCombatTag.FoCombatTag;
 import me.foesio.foCombatTag.api.CombatTagRemoveReason;
+import me.foesio.foCombatTag.api.event.CombatLogoutPenaltyEvent;
 import me.foesio.foCombatTag.api.event.CombatTagRemoveEvent;
 import me.foesio.foCombatTag.service.BorderService.BorderPush;
 import org.bukkit.Bukkit;
@@ -244,7 +245,13 @@ public final class PlayerStateListener implements Listener {
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
         boolean tagged = plugin.combatTags().isTagged(player);
-        if (tagged && plugin.settings().killOnLogout() && !player.isDead() && player.getHealth() > 0.0D) {
+        boolean applyPenalty = false;
+        if (tagged) {
+            CombatLogoutPenaltyEvent penaltyEvent = new CombatLogoutPenaltyEvent(player, plugin.settings().killOnLogout());
+            Bukkit.getPluginManager().callEvent(penaltyEvent);
+            applyPenalty = !penaltyEvent.isCancelled();
+        }
+        if (applyPenalty && plugin.settings().killOnLogout() && !player.isDead() && player.getHealth() > 0.0D) {
             try {
                 player.setHealth(0.0D);
                 plugin.logInfo(player.getName() + " died for logging out while combat tagged.");
@@ -252,7 +259,7 @@ public final class PlayerStateListener implements Listener {
                 plugin.logWarning("Failed to kill " + player.getName() + " on combat logout: " + exception.getMessage());
             }
         }
-        if (tagged) {
+        if (applyPenalty) {
             punishCombatLogout(player);
         }
         plugin.combatTags().untag(player, CombatTagRemoveReason.QUIT, false);
